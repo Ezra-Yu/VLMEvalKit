@@ -386,6 +386,11 @@ h2ovl_series = {
     'h2ovl-mississippi-1b': partial(H2OVLChat, model_path='h2oai/h2ovl-mississippi-800m'),
 }
 
+xhs_series = {
+    'agi-vlm1.5-3.3.2-Chatv1.0-s1': partial(XHSVLMLChat, model_path='/cpfs/user/qiaoyu/oc/agi-vlm1.5-3.3.2-Chatv1.0-s1'),
+    'agi-vlm1.5-3.3.2-Chatv1.1-s2.1': partial(XHSVLMLChat, model_path='/cpfs/user/qiaoyu/oc/agi-vlm1.5-3.3.2-Chatv1.1-s2.1'),
+}
+
 supported_VLM = {}
 
 model_groups = [
@@ -397,7 +402,7 @@ model_groups = [
     mantis_series, mmalaya_series, phi3_series, xgen_mm_series, qwen2vl_series, 
     slime_series, eagle_series, moondream_series, llama_series, molmo_series,
     kosmos_series, points_series, nvlm_series, vintern_series, h2ovl_series, aria_series,
-    smolvlm_series, sail_series
+    smolvlm_series, sail_series, xhs_series
 ]
 
 for grp in model_groups:

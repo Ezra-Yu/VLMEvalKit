@@ -19,6 +19,73 @@ from .base import BaseModel
 from .qwen2_vl.prompt import Qwen2VLPromptMixin
 from ..smp import get_rank_and_world_size, get_gpu_memory, auto_split_flag
 
+class XHSVLMPromptMixin(Qwen2VLPromptMixin):
+
+    def build_prompt(self, line, dataset: str) -> list[dict[str, str]]:
+        from vlmeval.dataset import DATASET_TYPE
+        if dataset in {'OCRBench'}:
+            return self._build_ocrbench_prompt(line, dataset)
+        if dataset in {'MMMU_DEV_VAL', 'MMMU_TEST'}:
+            return self._build_mmmu_prompt(line, dataset)
+        dataset_type = DATASET_TYPE(dataset, default=None)
+        if dataset_type == 'MCQ':
+            return self._build_mcq_prompt(line, dataset)
+        if dataset_type == 'Y/N':
+            return self._build_yorn_prompt(line, dataset)
+        if dataset_type == 'VQA':
+            return self._build_vqa_prompt(line, dataset)
+        raise ValueError(f'Unsupported dataset: {dataset}')
+
+    def _build_mmmu_prompt(self, line, dataset: str) -> list[dict[str, str]]:
+        """change the prompt for MMMU dataset: keep all images at beginning."""
+        import string, re
+        import pandas as pd
+
+        tgt_path = self.dump_image(line, dataset)
+        question = line['question']
+        options = {cand: line[cand] for cand in string.ascii_uppercase if cand in line and not pd.isna(line[cand])}
+        options_prompt = 'Options:\n'
+        for key, item in options.items():
+            options_prompt += f'{key}. {item}\n'
+        hint = line['hint'] if ('hint' in line and not pd.isna(line['hint'])) else None
+        prompt = ''
+        if hint is not None:
+            prompt += f'Hint: {hint}\n'
+        prompt += f'Question: {question}\n'
+        prompt = re.sub(r"<image \d+>", "", prompt)
+        if len(options):
+            prompt += options_prompt
+            prompt += 'Please select the correct answer from the options above. \n'
+        prompt = prompt.rstrip()
+        msgs = []
+        if isinstance(tgt_path, list):
+            for i, p in enumerate(tgt_path):
+                msgs.extend([ 
+                    dict(type='text', value=f"Picture {i+1}:"),
+                    dict(type='image', value=p),
+                    dict(type='text', value="\n"),
+                ])
+        else:
+            msgs = [dict(type='image', value=tgt_path)]
+        msgs.append(dict(type='text', value=prompt))
+        return msgs
+
+    def _build_ocrbench_prompt(self, line, dataset: str) -> list[dict[str, str]]:
+        """change the prompt for VQA dataset:"""
+        VQA_PROMPT = '\nPlease try to answer the question with short words or phrases if possible.'
+
+        tgt_path = self.dump_image(line, dataset)
+        question = line['question']
+        msgs = []
+        if isinstance(tgt_path, list):
+            msgs.extend([dict(type='image', value=p) for p in tgt_path])
+        else:
+            msgs = [dict(type='image', value=tgt_path)]
+        msgs.append(dict(type='text', value=question))
+        assert msgs[-1]['type'] == 'text'
+        msgs[-1]['value'] += VQA_PROMPT
+        return msgs
+
 
 def load_pil_images_pretrain(images: List[str]) -> List[PIL.Image.Image]:
     """Support file path or base64 images for pretraining data format.
@@ -52,7 +119,7 @@ def load_pil_images_pretrain(images: List[str]) -> List[PIL.Image.Image]:
     return pil_images
 
 
-class XHSVLMLChat(Qwen2VLPromptMixin, BaseModel):
+class XHSVLMLChat(XHSVLMPromptMixin, BaseModel):
     INSTALL_REQ = False
     INTERLEAVE = True
     VIDEO_LLM = False

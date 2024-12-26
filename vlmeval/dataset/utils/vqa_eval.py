@@ -271,7 +271,12 @@ def process_line(line, method='vqa_score'):
         ret['match'] = [anls_compute(x, ret['pred']) for x in ret['gt']]
     elif method == 'relaxed_accuracy':
         ret['gt'] = answers
-        ret['pred'] = line['prediction'].strip()
+        def clean_dot(x):
+            if x.endswith("."):
+                return x[:-1]
+            else:
+                return x
+        ret['pred'] = clean_dot(line['prediction'].strip())
         ret['match'] = [relaxed_correctness(ret['pred'], x) for x in ret['gt']]
     elif method == 'accuracy':
         ret['gt'] = answers

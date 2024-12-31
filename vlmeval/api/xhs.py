@@ -84,7 +84,7 @@ class XDGAPI(BaseAPI, XDGPromptMixin):
                  key: str = "demo_api_1",
                  verbose: bool = True,
                  temperature: float = 0.0,
-                 system_prompt: str = None,
+                 system_prompt: str = "你是一个人工智能助手",
                  max_tokens: int = 9128,
                  proxy: str = None,
                  use_custom_prompt=True,
@@ -103,6 +103,7 @@ class XDGAPI(BaseAPI, XDGPromptMixin):
         if proxy is not None:
             proxy_set(proxy)
         super().__init__(wait=wait, retry=retry, system_prompt=system_prompt, verbose=verbose, **kwargs)
+        self.system_prompt = system_prompt
 
     @staticmethod
     def build_msgs(msgs_raw):
@@ -126,6 +127,8 @@ class XDGAPI(BaseAPI, XDGPromptMixin):
         return messages
 
     def _make_payload(self, messages, gen_config):
+        if self.system_prompt:
+            messages = [{'role': 'system', 'content': [dict(type='text', text=self.system_prompt)]}] + messages
         return {
             "messages": messages,
             'model' : f'{self.model}',

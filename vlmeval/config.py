@@ -379,7 +379,7 @@ h2ovl_series = {
 }
 
 xhs_series = {
-    'xdg_vlm': partial(XDGAPI, model='xdg_b1.5_s2.1_20241210', do_sample=False),
+    'xdg_vlm': partial(XDGAPI, model="xdg-vl-72b", do_sample=False),
 }
 
 supported_VLM = {}

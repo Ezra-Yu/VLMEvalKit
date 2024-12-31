@@ -3,7 +3,7 @@ from vlmeval.api.base import BaseAPI
 
 from ..vlm.qwen2_vl import Qwen2VLPromptMixin
 
-DEFAULT_URL="http://1781574661016173.ap-southeast-1.pai-eas.aliyuncs.com/api/predict/deploy_services/v1/chat/completions"
+DEFAULT_URL="https://agi-serving.devops.xiaohongshu.com/all-in-one/v1/chat/completions"
 
 class XDGPromptMixin(Qwen2VLPromptMixin):
 
@@ -81,11 +81,11 @@ class XDGAPI(BaseAPI, XDGPromptMixin):
                  base_url: str = DEFAULT_URL, 
                  retry: int = 5,
                  wait: int = 5,
-                 key: str = None,
+                 key: str = "demo_api_1",
                  verbose: bool = True,
                  temperature: float = 0.0,
                  system_prompt: str = None,
-                 max_tokens: int = 2048,
+                 max_tokens: int = 9128,
                  proxy: str = None,
                  use_custom_prompt=True,
                  **kwargs):
@@ -167,4 +167,4 @@ class XDGAPI(BaseAPI, XDGPromptMixin):
         assert "usage" in response_data, "Response does not contain 'usage'"
         ret_code = 0 if response.status_code == 200 else response.status_code 
 
-        return ret_code, response_data["choices"][0]["message"]["content"], str(response_data)
+        return ret_code, response_data["choices"][0]["message"]["content"][0]['text'], str(response_data)

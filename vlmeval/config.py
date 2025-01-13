@@ -390,6 +390,7 @@ h2ovl_series = {
 
 xhs_series = {
     'xdg_vlm': partial(XDGAPI, model="xdg-vl-72b", do_sample=False),
+    'agi-vlm1.4.1.1-ChatV1.0-s2.2': partial(XHSVLMLChat, model_path='/cpfs/user/qiaoyu/oc/agi-vlm1.4.1.1-ChatV1.0-s2.2'),
     'agi-vlm1.5-3.3.2-Chatv1.0-s1': partial(XHSVLMLChat, model_path='/cpfs/user/qiaoyu/oc/agi-vlm1.5-3.3.2-Chatv1.0-s1'),
     'agi-vlm1.5-3.3.2-Chatv1.1-s2.1': partial(XHSVLMLChat, model_path='/cpfs/user/qiaoyu/oc/agi-vlm1.5-3.3.2-Chatv1.1-s2.1'),
 }

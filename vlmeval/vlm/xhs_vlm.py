@@ -23,8 +23,8 @@ class XHSVLMPromptMixin(Qwen2VLPromptMixin):
 
     def build_prompt(self, line, dataset: str) -> list[dict[str, str]]:
         from vlmeval.dataset import DATASET_TYPE
-        if dataset in {'OCRBench'}:
-            return self._build_ocrbench_prompt(line, dataset)
+        # if dataset in {'OCRBench'}:
+        #     return self._build_ocrbench_prompt(line, dataset)
         if dataset in {'MMMU_DEV_VAL', 'MMMU_TEST'}:
             return self._build_mmmu_prompt(line, dataset)
         dataset_type = DATASET_TYPE(dataset, default=None)
@@ -176,7 +176,7 @@ class XHSVLMLChat(XHSVLMPromptMixin, BaseModel):
     def _set_model_kwargs_torch_dtype(self, model_kwargs):
         import torch
         if 'torch_dtype' not in model_kwargs:
-            torch_dtype = torch.float16
+            torch_dtype = torch.bfloat16
         else:
             torch_dtype = {
                 'torch.float16': torch.float16,

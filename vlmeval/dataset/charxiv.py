@@ -22,7 +22,7 @@ def auxeval(judge_model: Any, line: pd.Series, **kwargs: Any) -> Dict[str, Any]:
     Returns:
         Dict containing evaluation results with extract_answer and score
     """
-    failure_result = {"extract_answer": "Failed to parse response", "score": 0.0}
+    failure_result = {"extract_answer": "Failed to parse response", "score": 0.0, "response": None}
     prompt = line["grading_query"].replace("{PREDICTION}", line["prediction"])
 
     retry = kwargs.get("retry", 10)
@@ -31,6 +31,8 @@ def auxeval(judge_model: Any, line: pd.Series, **kwargs: Any) -> Dict[str, Any]:
     seed = kwargs.get("seed", 42)
     top_p = kwargs.get("top_p", 1)
 
+    from copy import deepcopy
+    _content = deepcopy(failure_result)
     for _ in range(retry):
         try:
             response = judge_model.generate(
@@ -40,16 +42,23 @@ def auxeval(judge_model: Any, line: pd.Series, **kwargs: Any) -> Dict[str, Any]:
                 seed=seed,
                 top_p=top_p,
             )
-            content = json.loads(response)
+            if response.startswith("```json"):
+                response = response[7:]
+            if response.endswith("```"):
+                response = response[:-3]
+            content = json.loads(response.strip())
+            
             if not isinstance(content, dict):
-                return failure_result
+                content = _content
             if "score" not in content or "extract_answer" not in content:
-                return failure_result
-            return content
-        except Exception:
+                content = _content
+            content["response"] = str(response)
+        except Exception as e:
+            content = _content
+            content["response"] = f"{response} {e}"
+            print(f"{response} {e}")
             continue
-
-    return failure_result
+    return content
 
 
 def qid2category(mode: str) -> Tuple[Dict[int, str], str]:
@@ -247,6 +256,9 @@ class CharXiv(ImageBaseDataset):
         data["score"] = data.apply(lambda x: processed_results[x.name]["score"], axis=1)
         data["extract_answer"] = data.apply(
             lambda x: processed_results[x.name]["extract_answer"], axis=1
+        )
+        data["response"] = data.apply(
+            lambda x: processed_results[x.name].get("response", ""), axis=1
         )
 
         # Save results and return scores

@@ -91,6 +91,37 @@ def report_acc(df):
     return pd.DataFrame(res)
 
 
+def report_acc_MMVP(df):
+    """
+    计算case-layer和question-layer的准确率
+    
+    参数:
+    df : DataFrame - 包含index, question, hit等列的数据框
+    
+    返回:
+    tuple - (case_acc, question_acc) 分别表示case层和question层的准确率
+    """
+    # 计算question-layer准确率（所有问题的平均正确率）
+    question_acc = df['hit'].mean()
+    
+    # 计算case-layer准确率
+    # 步骤1：创建case_id列 (每两个index共享同一个case_id)
+    df['case_id'] = (df['index'] - 1) // 2
+    
+    # 步骤2：按case_id分组，计算每个case内所有hit的乘积
+    # (当且仅当两个问题都正确时乘积为1)
+    case_hits = df.groupby('case_id')['hit'].prod()
+    
+    # 步骤3：计算case准确率
+    case_acc = case_hits.mean()
+
+    return pd.DataFrame(
+        {
+            "case_accuray": [case_acc], 
+            "question_accuray" : [question_acc]
+        }
+    )
+
 def report_acc_MMT(df):
     # assert group in [None, 'category', 'l2-category']
     res = defaultdict(list)
@@ -311,6 +342,7 @@ def prefetch_answer(item):
 
 
 def extract_answer_from_item(model, item, dataset_name=None):
+    item['prediction'] = item['prediction'].strip()
     logger = get_logger('Evaluation')
     # It will return: (pred, raw, llm_time)
     choices = build_choices(item)
@@ -541,6 +573,10 @@ def extract_characters_regex(s, choices=['(A)', '(B)', '(C)', '(D)', '(E)']):
     if type(s) is dict:
         s = ''
     s = s.strip()
+    match = re.search(r'.*\\boxed\{([^}]*)\}', text)
+    if match:
+        return match.group(1)
+
     answer_prefixes = [
         'The best answer is',
         'The correct answer is',

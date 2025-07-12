@@ -74,7 +74,7 @@ def infer_data_api(model, work_dir, model_name, dataset, index_set=None, api_npr
 
     res = load(out_file)
     if index_set is not None:
-        res = {k: v for k, v in res.items() if k in index_set}
+        res = {k: v for k, v in res.items() if k in index_set} 
     os.remove(out_file)
     return res
 
@@ -215,6 +215,26 @@ def infer_data_job(
         for x in data['index']:
             assert x in data_all
         data['prediction'] = [str(data_all[x]) for x in data['index']]
+        from copy import deepcopy
+        ori_predictions = deepcopy(data['prediction'])
+        predictions = []
+        think_flag = 0
+        for ori_pred in ori_predictions:
+            pred = ori_pred
+            if "<think>" in ori_pred and "</think>" in ori_pred:
+                think_flag = 1
+                pred = ori_pred.split("</think>")[1]
+                pred = pred.lstrip()
+            if pred.startswith("\n"):
+                pred = pred.lstrip("\n")
+                pred = pred.lstrip("\n\n")
+            if pred.startswith("\\n"):
+                pred = pred.lstrip("\\n")
+                pred = pred.lstrip("\\n\\n")
+            predictions.append(pred)
+        data['prediction'] = predictions
+        if think_flag:
+            data['ori_prediction'] = ori_predictions
         if 'image' in data:
             data.pop('image')
 

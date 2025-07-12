@@ -56,12 +56,12 @@ class ImageVQADataset(ImageBaseDataset):
 
     # It returns a DataFrame
     def evaluate(self, eval_file, **judge_kwargs):
-        from .utils.vqa_eval import hit_calculate, process_line
+        from .utils.vqa_eval import hit_calculate, process_line, extract_boxed_answer
 
         data = load(eval_file)
         dataset = self.dataset_name
         assert 'answer' in data and 'prediction' in data
-        data['prediction'] = [str(x) for x in data['prediction']]
+        data['prediction'] = [extract_boxed_answer(str(x)) for x in data['prediction']]
         data['answer'] = [str(x) for x in data['answer']]
         lt = len(data)
         pool = mp.Pool(16)
@@ -156,6 +156,12 @@ class OCRBench(ImageBaseDataset):
         'https://opencompass.openxlab.space/utils/TEST/OCRBench_MINI.tsv'
     }
     DATASET_MD5 = {'OCRBench': 'e953d98a987cc6e26ef717b61260b778'}
+
+    def build_prompt(self, line):
+        msgs = super().build_prompt(line)
+        assert msgs[-1]['type'] == 'text'
+        msgs[-1]['value'] += '\nPlease try to answer the question with short words or phrases if possible.'
+        return msgs
 
     # It returns a dictionary
     @classmethod
@@ -428,11 +434,14 @@ class MathVision(ImageBaseDataset):
     DATASET_URL = {
         'MathVision':
         'https://opencompass.openxlab.space/utils/VLMEval/MathVision.tsv',
+        'MathVision_third':
+        'https://opencompass.openxlab.space/utils/VLMEval/MathVision_third.tsv',
         'MathVision_MINI':
         'https://opencompass.openxlab.space/utils/VLMEval/MathVision_MINI.tsv'
     }
     DATASET_MD5 = {
         'MathVision': '93f6de14f7916e598aa1b7165589831e',
+        "MathVision_third" : '8598351436e7b1c802a827da5bc79997',
         'MathVision_MINI': '060fe4fa5d868987ce179307bd5f8a33'
     }
 
@@ -488,6 +497,27 @@ class MathVision(ImageBaseDataset):
         score_pth = storage.replace('.xlsx', '_score.csv')
         dump(score, score_pth)
         return score
+    
+    # Given one data record, return the built prompt (a multi-modal message), can override
+    def build_prompt(self, line):
+        if isinstance(line, int):
+            line = self.data.iloc[line]
+
+        if self.meta_only:
+            tgt_path = toliststr(line['image_path'])
+        else:
+            tgt_path = self.dump_image(line)
+        
+        question = line['question']
+
+        msgs = []
+        hint = """\nPlease solve the problem step by step and put your answer in one "\boxed{}". If it is amultiple choice question, only one letter ("\boxed{A}", "\boxed{B}", "\boxed{C}","\boxed{D}", or "\boxed{E}") is allowed in the "\boxed{}". For example, do NOT output"\boxed{42}" for a multiple choice question."""
+        if isinstance(tgt_path, list):
+            msgs.extend([dict(type='image', value=p) for p in tgt_path])
+        else:
+            msgs = [dict(type='image', value=tgt_path)]
+        msgs.append(dict(type='text', value=question + hint))
+        return msgs
 
 
 class Physics_yale(ImageBaseDataset):
@@ -2398,6 +2428,8 @@ class ZEROBench(ImageVQADataset):
 
         # compute accuracy
         accuracy = output_df["Correct?"].mean()
+        result_file = eval_file.replace(f".{eval_file.split('.')[-1]}", "_acc.json")
+        dump( {'accuracy': accuracy}, result_file )
         return {"accuracy": accuracy}
 
     def build_prompt(self, line):
@@ -2442,6 +2474,8 @@ class CountBenchQA(ImageVQADataset):
             if ans in pred:
                 correct_count += 1
         accuracy = correct_count / total_count if total_count > 0 else 0
+        result_file = eval_file.replace(f".{eval_file.split('.')[-1]}", "_acc.json")
+        dump( {'accuracy': accuracy}, result_file )
         return {'accuracy': accuracy}
 
 
@@ -2449,9 +2483,15 @@ class OCR_Reasoning(ImageBaseDataset):
     TYPE = 'VQA'
     DATASET_URL = {
         'OCR_Reasoning':
-        'https://opencompass.openxlab.space/utils/VLMEval/OCR_Reasoning.tsv'
+        'https://opencompass.openxlab.space/utils/VLMEval/OCR_Reasoning.tsv',
+        'OCR_Reasoning_half':
+        'https://opencompass.openxlab.space/utils/VLMEval/OCR_Reasoning_half.tsv'
     }
-    DATASET_MD5 = {'OCR_Reasoning': 'cf95ace31742170cf669ef45e0dae267'}
+    DATASET_MD5 = {
+        'OCR_Reasoning': 'cf95ace31742170cf669ef45e0dae267',
+        'OCR_Reasoning_half' : '320ce85339be22c8a9f77e11d2b2b84b'
+        
+    }
 
     # It returns a DataFrame
     @classmethod
@@ -2463,7 +2503,6 @@ class OCR_Reasoning(ImageBaseDataset):
         storage = eval_file.replace(f'.{suffix}', f'_{model}.xlsx')
         tmp_file = eval_file.replace(f'.{suffix}', f'_{model}.pkl')
         nproc = judge_kwargs.pop('nproc', 4)
-        nproc = 1
         if not osp.exists(storage):
             data = load(eval_file)
             model = build_judge(max_tokens=1024, **judge_kwargs)

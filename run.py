@@ -235,6 +235,7 @@ You can launch the evaluation by setting either --data and --model or --config.
     parser.add_argument(
         '--use-vllm', action='store_true', help='use vllm to generate, the flag is only supported in Llama4 for now')
     parser.add_argument('--use-verifier', action='store_true', help='use verifier to evaluate')
+    parser.add_argument('--use-xverifier-api', action='store_true', help='use xverifier_api to evaluate')
 
     args = parser.parse_args()
     return args
@@ -455,6 +456,8 @@ def main():
 
                 if args.use_verifier:
                     judge_kwargs['use_verifier'] = True
+                if args.use_xverifier_api:
+                    judge_kwargs['use_xverifier_api'] = True
                 if args.use_vllm:
                     judge_kwargs['use_vllm'] = True
 

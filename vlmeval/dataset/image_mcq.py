@@ -39,6 +39,47 @@ MTL_MMBench_MD5 = {
 }
 
 
+def report_acc_verifier(result_file):
+    from collections import defaultdict
+
+    data = load(result_file)
+    tot = defaultdict(lambda: 0)
+    hit = defaultdict(lambda: 0)
+    lt = len(data)
+
+    for i in range(lt):
+        item = data.iloc[i]
+        split_name = item.get('split', 'Overall')
+        if pd.isna(split_name):
+            split_name = 'Overall'
+
+        tot['Overall'] += 1
+        tot[split_name] += 1
+
+        if 'category' in item and not pd.isna(item['category']):
+            category = item['category']
+            tot[category] += 1
+
+        if item['verifier_score'] is True:
+            hit['Overall'] += 1
+            hit[split_name] += 1
+
+            if 'category' in item and not pd.isna(item['category']):
+                hit[category] += 1
+
+    res = defaultdict(list)
+    for k in tot.keys():
+        if k == 'Overall':
+            res['Category'].append('Overall')
+        else:
+            res['Category'].append(k)
+        res['Total'].append(tot[k])
+        res['Hit'].append(hit[k])
+        res['Accuracy'].append(hit[k] / tot[k] * 100 if tot[k] > 0 else 0.0)
+
+    res_df = pd.DataFrame(res)
+    return res_df
+
 class ImageMCQDataset(ImageBaseDataset):
 
     TYPE = 'MCQ'
@@ -226,8 +267,36 @@ class ImageMCQDataset(ImageBaseDataset):
     def evaluate(self, eval_file, **judge_kwargs):
         if judge_kwargs.get('use_verifier', False):
             return self.evaluate_verifier(eval_file, **judge_kwargs)
+        elif judge_kwargs.get('use_xverifier_api', False):
+            return self.evaluate_xverifier_api(eval_file, **judge_kwargs)
         else:
             return self.evaluate_heuristic(eval_file, **judge_kwargs)
+
+    def evaluate_xverifier_api(self, eval_file, **judge_kwargs):
+        from .utils.xverify import VQAxVerifyEvaluator
+
+        model = judge_kwargs['model']
+        suffix = eval_file.split('.')[-1]
+        storage = eval_file.replace(f'.{suffix}', f'_{model}.xlsx')
+        data = load(eval_file)
+
+        predictions = data['prediction'].tolist()
+        predictions = [x.split("</think>")[1].strip() if "</think>" in x else x for x in predictions]
+        answers = data['answer'].tolist()
+
+        questions = data['question'].tolist()
+        candidates = data['candidates'].tolist()
+        questions = [q + '\nOptions:\n' + '\n'.join(options) for q, options in zip(questions, candidates)]
+       
+        xverify = VQAxVerifyEvaluator(dataset_name=self.dataset_name)
+        results = xverify.score( predictions, answers, questions )
+        data['score'] = results
+        
+        dump(data, storage)
+        score_pth = storage.replace('.xlsx', '_score.json')
+        acc = report_acc_verifier(storage)
+        dump(acc, score_pth)
+        return acc
 
     def evaluate_heuristic(self, eval_file, **judge_kwargs):
         from .utils.multiple_choice import (

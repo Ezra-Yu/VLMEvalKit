@@ -58,9 +58,14 @@ class ImageVQADataset(ImageBaseDataset):
     def evaluate(self, eval_file, **judge_kwargs):
         if judge_kwargs.get('use_verifier', False):
             return self.evaluate_verifier(eval_file, **judge_kwargs)
+        elif judge_kwargs.get('use_xverifier_api', False):
+            return self.evaluate_xverifier_api(eval_file, **judge_kwargs)
         else:
             return self.evaluate_heuristic(eval_file, **judge_kwargs)
 
+    def evaluate_xverifier_api(self, eval_file, **judge_kwargs):
+        raise NotImplementedError("xverifier_api is not implemented for VQA")
+    
     # It returns a DataFrame
     def evaluate_heuristic(self, eval_file, **judge_kwargs):
         from .utils.vqa_eval import hit_calculate, process_line

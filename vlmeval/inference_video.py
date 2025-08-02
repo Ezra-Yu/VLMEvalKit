@@ -43,9 +43,20 @@ def infer_data_api(model, work_dir, model_name, dataset, samples_dict={}, api_np
               'will set its VIDEO_LLM to False to enable multi-image input for video.')
         setattr(model, 'VIDEO_LLM', False)
 
-    structs = [dataset.build_prompt(samples_dict[idx], video_llm=getattr(model, 'VIDEO_LLM', False)) for idx in indices]
-
     packstr = 'pack' if getattr(dataset, 'pack', False) else 'nopack'
+    build_prompt_input = [(samples_dict[idx], getattr(model, 'VIDEO_LLM', False)) for idx in indices]
+    if dataset.nframe > 0:
+        struct_tmp_file = f'{work_dir}/{model_name}_{dataset_name}_{dataset.nframe}frame_{packstr}_structs.pkl'
+    else:
+        struct_tmp_file = f'{work_dir}/{model_name}_{dataset_name}_{dataset.fps}fps_{packstr}_structs.pkl'
+    structs = track_progress_rich(
+        dataset.build_prompt,
+        tasks=build_prompt_input,
+        nproc=api_nproc,
+        save=struct_tmp_file,
+        keys=indices,
+    )
+
     if dataset.nframe > 0:
         out_file = f'{work_dir}/{model_name}_{dataset_name}_{dataset.nframe}frame_{packstr}_supp.pkl'
     else:
@@ -53,6 +64,7 @@ def infer_data_api(model, work_dir, model_name, dataset, samples_dict={}, api_np
     res = load(out_file) if osp.exists(out_file) else {}
 
     structs = [s for i, s in zip(indices, structs) if i not in res or res[i] == FAIL_MSG]
+    structs = [struct for struct in structs if struct is not None]
     indices = [i for i in indices if i not in res or res[i] == FAIL_MSG]
 
     gen_func = model.generate
@@ -236,6 +248,30 @@ def infer_data_job_video(
             for x in meta['index']:
                 assert x in data_all
             meta['prediction'] = [str(data_all[x]) for x in meta['index']]
+            from copy import deepcopy
+            ori_predictions = deepcopy(meta['prediction'])
+            predictions = []
+            think_flag = 0
+            for ori_pred in ori_predictions:
+                pred = ori_pred
+                if "<think>" in ori_pred and "</think>" in ori_pred:
+                    think_flag = 1
+                    pred = ori_pred.split("</think>")[1]
+                    pred = pred.lstrip()
+                if "<｜place▁holder▁no▁12｜>" in ori_pred and "<｜place▁holder▁no▁12｜>" in ori_pred:
+                    think_flag = 1
+                    pred = ori_pred.split("<｜place▁holder▁no▁12｜>")[1]
+                    pred = pred.lstrip()
+                if pred.startswith("\n"):
+                    pred = pred.lstrip("\n")
+                    pred = pred.lstrip("\n\n")
+                if pred.startswith("\\n"):
+                    pred = pred.lstrip("\\n")
+                    pred = pred.lstrip("\\n\\n")
+                predictions.append(pred)
+            meta['prediction'] = predictions
+            if think_flag:
+                meta['ori_prediction'] = ori_predictions
             if 'image' in meta:
                 meta.pop('image')
 

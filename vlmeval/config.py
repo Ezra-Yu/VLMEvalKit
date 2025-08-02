@@ -134,6 +134,213 @@ api_models = {
         retry=10,
         verbose=False,
     ),
+    "xdg": partial(
+        GPT4V,
+        model="xdg_ds_v3_vlm",
+        temperature=0,
+        img_size=-1,
+        img_detail="high",
+        retry=10,
+        verbose=True,
+    ),
+    "vllm_qwen-72b": partial(
+        VLLMAPI,
+        model="Qwen25-VL-72B-Instruct",
+        temperature=0,
+        retry=10,
+        verbose=True,
+        system_prompt=None,
+    ),
+    "xhs_api": partial(
+        XHSVLMAPI,
+        temperature=0,
+        retry=10,
+        verbose=True,
+        max_tokens= 8192,
+        timeout = 512,
+        system_prompt=None,
+    ),
+    "xhs_api-16k": partial(
+        XHSVLMAPI,
+        temperature=0,
+        retry=10,
+        verbose=True,
+        max_tokens= 16384,
+        timeout = 1024,
+        system_prompt=None,
+    ),
+    "xhs_api-32k": partial(
+        XHSVLMAPI,
+        temperature=0,
+        retry=10,
+        verbose=True,
+        max_tokens= 28214,
+        timeout = 2048,
+        system_prompt=None,
+    ),
+    "xhs_api-temperature0.1": partial(
+        XHSVLMAPI,
+        temperature=0.1,
+        retry=10,
+        verbose=True,
+        max_tokens= 16384,
+        timeout = 1024,
+        system_prompt=None,
+    ),
+    "xhs_api-temperature0.3": partial(
+        XHSVLMAPI,
+        temperature=0.3,
+        retry=10,
+        verbose=True,
+        max_tokens= 16384,
+        timeout = 1024,
+        system_prompt=None,
+    ),
+    "xhs_api-temperature0.5": partial(
+        XHSVLMAPI,
+        temperature=0.5,
+        retry=10,
+        verbose=True,
+        max_tokens= 16384,
+        timeout = 1024,
+        system_prompt=None,
+    ),
+ "xhs_api-temperature0.7-8k": partial(
+        XHSVLMAPI,
+        temperature=0.7,
+        retry=10,
+        verbose=True,
+        max_tokens= 8192,
+        timeout = 512,
+        system_prompt=None,
+    ),
+    "xhs_api-temperature0.7-16k": partial(
+        XHSVLMAPI,
+        temperature=0.7,
+        retry=10,
+        verbose=True,
+        max_tokens= 16384,
+        timeout = 1024,
+        system_prompt=None,
+    ),
+    "xhs_api-temperature0.7": partial(
+        XHSVLMAPI,
+        temperature=0.7,
+        retry=10,
+        verbose=True,
+        max_tokens= 16384,
+        timeout = 1024,
+        system_prompt=None,
+    ),
+    "xhs_api-temperature0.7-64k": partial(
+        XHSVLMAPI,
+        temperature=0.7,
+        retry=10,
+        verbose=True,
+        max_tokens= 60000,
+        timeout = 4096,
+        system_prompt=None,
+    ),
+    "xhs_api-temperature0.1-64k": partial(
+        XHSVLMAPI,
+        temperature=0.1,
+        retry=3,
+        verbose=True,
+        max_tokens= 60000,
+        timeout = 4096,
+        system_prompt=None,
+    ),
+    "xhs_api-temperature0.3-64k": partial(
+        XHSVLMAPI,
+        temperature=0.3,
+        retry=3,
+        verbose=True,
+        max_tokens= 60000,
+        timeout = 4096,
+        system_prompt=None,
+    ),
+    "xhs_api-temperature0.7-32k": partial(
+        XHSVLMAPI,
+        temperature=0.7,
+        retry=10,
+        verbose=True,
+        max_tokens= 28214,
+        timeout = 2048,
+        system_prompt=None,
+    ),
+    "xhs_api-temperature0.5-32k": partial(
+        XHSVLMAPI,
+        temperature=0.5,
+        retry=10,
+        verbose=True,
+        max_tokens= 28214,
+        timeout = 2048,
+        system_prompt=None,
+    ),
+    "xhs_api-temperature0.3-32k": partial(
+        XHSVLMAPI,
+        temperature=0.3,
+        retry=10,
+        verbose=True,
+        max_tokens= 28214,
+        timeout = 2048,
+        system_prompt=None,
+    ),
+    "xhs_api-temperature0.1-32k": partial(
+        XHSVLMAPI,
+        temperature=0.1,
+        retry=10,
+        verbose=True,
+        max_tokens= 28214,
+        timeout = 2048,
+        system_prompt=None,
+    ),
+    "xhs_api-temperature1-32k": partial(
+        XHSVLMAPI,
+        temperature=1,
+        retry=10,
+        verbose=True,
+        max_tokens= 28214,
+        timeout = 2048,
+        system_prompt=None,
+    ),
+    "xhs_api-temperature0-32k": partial(
+        XHSVLMAPI,
+        temperature=0,
+        retry=10,
+        verbose=True,
+        max_tokens= 28214,
+        timeout = 2048,
+        system_prompt=None,
+    ),
+    "xhs_api-temperature0-64k": partial(
+        XHSVLMAPI,
+        temperature=0,
+        retry=10,
+        verbose=True,
+        max_tokens= 60000,
+        timeout = 4096,
+        system_prompt=None,
+    ),
+    "xhs-seedvl-1.5" : partial(
+        XHSSEEDVL,
+        temperature=0,
+        retry=300,
+        verbose=True,
+        max_tokens=16384,
+        timeout = 1000,
+        system_prompt=None,
+    ),
+    "xhs-seedvl-1.5-nothink" : partial(
+        XHSSEEDVL,
+        temperature=0,
+        retry=300,
+        verbose=True,
+        think_mode=False,
+        max_tokens= 16384,
+        timeout = 1000,
+        system_prompt=None,
+    ),
     "GPT4V_HIGH": partial(
         GPT4V,
         model="gpt-4-1106-vision-preview",
@@ -279,6 +486,9 @@ api_models = {
     ),
     "GeminiPro2-5": partial(
         GPT4V, model="gemini-2.5-pro", temperature=0, retry=10, timeout=1800
+    ),
+    "GeminiPro2-5-32k": partial(
+        GPT4V, model="gemini-2.5-pro", temperature=0, retry=5, timeout=180, max_tokens=32768
     ),
     
     # Qwen-VL
@@ -427,8 +637,8 @@ api_models = {
     "BailingMM-Pro-0120": partial(
         bailingMMAPI, model="BailingMM-Pro-0120", temperature=0, retry=10
     ),
-    # BlueLM-V
-    "BlueLM_V": partial(BlueLM_V_API, model="BlueLM-VL-v3.0", temperature=0, retry=10),
+    # BlueLM-2.5
+    "BlueLM-2.5-3B": partial(BlueLM_API, model="BlueLM-2.5-3B", temperature=0, retry=3),
     # JiuTian-VL
     "JTVL": partial(JTVLChatAPI, model="jt-vl-chat", temperature=0, retry=10),
     "Taiyi": partial(TaiyiAPI, model="taiyi", temperature=0, retry=10),
@@ -469,13 +679,13 @@ api_models = {
     ),
     # doubao_vl
     "DoubaoVL": partial(
-        DoubaoVL, model="Doubao-1.5-vision-pro", temperature=0, retry=10, verbose=False
+        DoubaoVL, model="Doubao-1.5-vision-pro", temperature=0, retry=3, verbose=False
     ),
     "Seed1.5-VL": partial(
         DoubaoVL, 
         model="doubao-1-5-thinking-vision-pro-250428", 
         temperature=0,
-        retry=10, 
+        retry=3, 
         verbose=False, 
         max_tokens=16384,
     ),
@@ -483,7 +693,7 @@ api_models = {
         DoubaoVL, 
         model="doubao-seed-1.6-250615", 
         temperature=0,
-        retry=10, 
+        retry=3, 
         verbose=False, 
         max_tokens=16384,
     ),
@@ -491,7 +701,7 @@ api_models = {
         DoubaoVL, 
         model="doubao-seed-1.6-flash-250615", 
         temperature=0,
-        retry=10, 
+        retry=3, 
         verbose=False, 
         max_tokens=16384,
     ),
@@ -499,7 +709,7 @@ api_models = {
         DoubaoVL, 
         model="doubao-seed-1.6-thinking-250615", 
         temperature=0,
-        retry=10, 
+        retry=3, 
         verbose=False, 
         max_tokens=16384,
     ),
@@ -526,6 +736,15 @@ api_models = {
         temperature=0,
         retry=10,
     ),
+    "grok-4-0709": partial(
+        GPT4V,
+        model="grok-4-0709",
+        api_base="https://api.x.ai/v1/chat/completions",
+        temperature=0,
+        retry=3,
+        timeout=1200, 
+        max_tokens=16384
+    ),
     # kimi
     "moonshot-v1-8k": partial(
         GPT4V,
@@ -548,6 +767,20 @@ api_models = {
         temperature=0,
         retry=10,
     ),
+    'ernie4.5-turbo': partial(
+        GPT4V,
+        model='ernie-4.5-turbo-vl-32k', 
+        temperature=0,
+        retry=3, 
+        max_tokens=12000, 
+    ),
+    'ernie4.5-a3b': partial(
+        GPT4V,
+        model='ernie-4.5-vl-28b-a3b', 
+        temperature=0,
+        retry=3, 
+        max_tokens=8000,
+    )
 }
 
 emu_series = {
@@ -1000,6 +1233,8 @@ cogvlm_series = {
         CogVlm, model_path="THUDM/cogvlm2-llama3-chat-19B"
     ),
     "glm-4v-9b": partial(GLM4v, model_path="THUDM/glm-4v-9b"),
+    "glm-4.1v-9b-base": partial(GLM4_1v, model_path="THUDM/GLM-4.1V-9B-Base"),
+    "glm-4.1v-9b-thinking": partial(GLM4_1v, model_path="THUDM/GLM-4.1V-9B-Thinking"),
 }
 
 wemm_series = {
@@ -1473,6 +1708,14 @@ kimi_vllm_series = {
 }
 
 
+treevgr_series = {
+    'TreeVGR-7B': partial(
+        TreeVGR, 
+        model_path='HaochenWang/TreeVGR-7B',
+        min_pixels=1280*28*28, max_pixels=16384*28*28,
+    ),
+}
+
 internvl_groups = [
     internvl, internvl2, internvl2_5, mini_internvl, internvl2_5_mpo, 
     internvl3,
@@ -1495,7 +1738,7 @@ model_groups = [
     aria_series, smolvlm_series, sail_series, valley_series, vita_series,
     ross_series, emu_series, ola_series, ursa_series, gemma_series,
     long_vita_series, ristretto_series, kimi_series, aguvis_series, hawkvl_series, 
-    flash_vl, kimi_vllm_series, oryx_series
+    flash_vl, kimi_vllm_series, oryx_series, treevgr_series
 ]
 
 for grp in model_groups:

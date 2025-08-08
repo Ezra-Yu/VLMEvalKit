@@ -216,8 +216,12 @@ Respond with only the letter (A, B, C, or D) of the correct option.
         if video_llm:
             message.append(dict(type='video', value=osp.join(self.data_root, 'video', line['video'] + '.mp4')))
         else:
+            count = 0
             for im in frames:
                 message.append(dict(type='image', value=im))
+                count += 1
+
+            print(f"Image Count: {count}")
 
         text_prompt = self.FRAMES_TMPL_NOSUB if not self.use_subtitle else self.FRAMES_TMPL_SUB.format(subtitles)
         message.append(dict(type='text', value=text_prompt))
@@ -228,7 +232,7 @@ Respond with only the letter (A, B, C, or D) of the correct option.
 
     # It returns a dictionary
     @classmethod
-    def evaluate(self, eval_file, **judge_kwargs):
+    def evaluate_(self, eval_file, **judge_kwargs):
         from .utils.videomme import get_dimension_rating, extract_characters_regex, extract_option
 
         assert eval_file.endswith('.xlsx'), 'data file should be an xlsx file'
@@ -285,3 +289,32 @@ Respond with only the letter (A, B, C, or D) of the correct option.
         rating = get_dimension_rating(score_file)
         dump(rating, tgt_file)
         return rating
+
+    # It returns a json dict
+    @classmethod
+    def evaluate(self, eval_file, **judge_kwargs): 
+        from .utils.videomme import get_dimension_rating
+        from .utils.xverify import VQAxVerifyEvaluator
+
+        model = judge_kwargs.get('model', 'xverify')
+        suffix = eval_file.split('.')[-1]
+        storage = eval_file.replace(f'.{suffix}', f'_{model}.xlsx')
+        data = load(eval_file)
+
+        predictions = data['prediction'].tolist()
+        predictions = [x.split("</think>")[1].strip() if "</think>" in x else x for x in predictions]
+        answers = data['answer'].tolist()
+
+        questions = data['question'].tolist()
+        candidates = data['candidates'].tolist()
+        questions = [q + '\nOptions:\n' + '\n'.join(options) for q, options in zip(questions, candidates)]
+       
+        xverify = VQAxVerifyEvaluator(dataset_name="Video-MME")
+        results = xverify.score(predictions, answers, questions )
+        data['score'] = results
+        
+        dump(data, storage)
+        score_pth = storage.replace('.xlsx', '_score.json')
+        acc = get_dimension_rating(storage)
+        dump(acc, score_pth)
+        return acc

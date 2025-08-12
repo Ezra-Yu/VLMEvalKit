@@ -63,9 +63,9 @@ def infer_data_api(model, work_dir, model_name, dataset, samples_dict={}, api_np
         out_file = f'{work_dir}/{model_name}_{dataset_name}_{dataset.fps}fps_{packstr}_supp.pkl'
     res = load(out_file) if osp.exists(out_file) else {}
 
-    structs = [s for i, s in zip(indices, structs) if i not in res or res[i] == FAIL_MSG]
+    structs = [s for i, s in zip(indices, structs) if i not in res or res[i].strip == FAIL_MSG]
     structs = [struct for struct in structs if struct is not None]
-    indices = [i for i in indices if i not in res or res[i] == FAIL_MSG]
+    indices = [i for i in indices if i not in res or res[i].strip() == FAIL_MSG]
 
     gen_func = model.generate
     structs = [dict(message=struct, dataset=dataset_name) for struct in structs]
@@ -175,8 +175,6 @@ def infer_data(model, model_name, work_dir, dataset, out_file, verbose=False, ap
             struct = dataset.build_prompt(
                 sample_map[idx], video_llm=getattr(model, 'VIDEO_LLM', False)
             )
-        if struct is None:
-            continue
 
         # If `SKIP_ERR` flag is set, the model will skip the generation if error is encountered
         if os.environ.get('SKIP_ERR', False) == '1':
@@ -250,6 +248,30 @@ def infer_data_job_video(
             for x in meta['index']:
                 assert x in data_all
             meta['prediction'] = [str(data_all[x]) for x in meta['index']]
+            from copy import deepcopy
+            ori_predictions = deepcopy(meta['prediction'])
+            predictions = []
+            think_flag = 0
+            for ori_pred in ori_predictions:
+                pred = ori_pred
+                if "<think>" in ori_pred and "</think>" in ori_pred:
+                    think_flag = 1
+                    pred = ori_pred.split("</think>")[1]
+                    pred = pred.lstrip()
+                if "<｜place▁holder▁no▁12｜>" in ori_pred and "<｜place▁holder▁no▁12｜>" in ori_pred:
+                    think_flag = 1
+                    pred = ori_pred.split("<｜place▁holder▁no▁12｜>")[1]
+                    pred = pred.lstrip()
+                if pred.startswith("\n"):
+                    pred = pred.lstrip("\n")
+                    pred = pred.lstrip("\n\n")
+                if pred.startswith("\\n"):
+                    pred = pred.lstrip("\\n")
+                    pred = pred.lstrip("\\n\\n")
+                predictions.append(pred)
+            meta['prediction'] = predictions
+            if think_flag:
+                meta['ori_prediction'] = ori_predictions
             if 'image' in meta:
                 meta.pop('image')
 

@@ -62,7 +62,7 @@ def infer_data_api(model, work_dir, model_name, dataset, index_set=None, api_npr
     if osp.exists(out_file):
         res = load(out_file)
         if ignore_failed:
-            res = {k: v for k, v in res.items() if FAIL_MSG not in v}
+            res = {k: v for k, v in res.items() if FAIL_MSG.strip() not in v.strip()}
 
     structs = [s for i, s in zip(indices, structs) if i not in res]
     indices = [i for i in indices if i not in res]
@@ -75,8 +75,8 @@ def infer_data_api(model, work_dir, model_name, dataset, index_set=None, api_npr
 
     res = load(out_file)
     if index_set is not None:
-        res = {k: v for k, v in res.items() if k in index_set}
-    os.remove(out_file)
+        res = {k: v for k, v in res.items() if k in index_set} 
+    # os.remove(out_file)
     return res
 
 
@@ -192,10 +192,9 @@ def infer_data_job(
     if osp.exists(result_file):
         if rank == 0:
             data = load(result_file)
-            # breakpoint()
             results = {k: v for k, v in zip(data['index'], data['prediction'])}
             if not ignore_failed:
-                results = {k: v for k, v in results.items() if FAIL_MSG not in str(v)}
+                results = {k: v for k, v in results.items() if FAIL_MSG.strip() not in str(v).strip()}
             dump(results, prev_file)
         if world_size > 1:
             dist.barrier()
@@ -217,30 +216,31 @@ def infer_data_job(
         data = dataset.data
         for x in data['index']:
             assert x in data_all
-        if os.getenv('SPLIT_THINK', False):
-            prediction = [str(data_all[x]) for x in data['index']]
-
-            def split_thinking(s):
-                if '</think>' in s:
-                    splits = s.split('</think>')
-                    prediction = splits[-1].strip()
-                    if len(splits) == 2 and '<think>' in splits[0]:
-                        thinking = splits[0].split('<think>')[1].strip()
-                    else:
-                        thinking = '</think>'.join(splits[:-1])
-                        thinking += '</think>'
-                        warnings.warn('Failed to parse thinking, multiple </think> tags or missing <think> tag.')
-                else:
-                    thinking = ''
-                    prediction = s
-                return (prediction, thinking)
-            split_func = model.split_thinking if hasattr(model, 'split_thinking') else split_thinking
-            print(f'Prediction format: {os.getenv("SPLIT_THINK")},splitting func: {split_func}')
-            tups = [split_func(x) for x in prediction]
-            data['prediction'] = [x[0] for x in tups]
-            data['thinking'] = [x[1] for x in tups]
-        else:
-            data['prediction'] = [str(data_all[x]) for x in data['index']]
+        data['prediction'] = [str(data_all[x]) for x in data['index']]
+        from copy import deepcopy
+        ori_predictions = deepcopy(data['prediction'])
+        predictions = []
+        think_flag = 0
+        for ori_pred in ori_predictions:
+            pred = ori_pred
+            if "<think>" in ori_pred and "</think>" in ori_pred:
+                think_flag = 1
+                pred = ori_pred.split("</think>")[1]
+                pred = pred.lstrip()
+            if "<｜place▁holder▁no▁12｜>" in ori_pred and "<｜place▁holder▁no▁12｜>" in ori_pred:
+                think_flag = 1
+                pred = ori_pred.split("<｜place▁holder▁no▁12｜>")[1]
+                pred = pred.lstrip()
+            if pred.startswith("\n"):
+                pred = pred.lstrip("\n")
+                pred = pred.lstrip("\n\n")
+            if pred.startswith("\\n"):
+                pred = pred.lstrip("\\n")
+                pred = pred.lstrip("\\n\\n")
+            predictions.append(pred)
+        data['prediction'] = predictions
+        if think_flag:
+            data['ori_prediction'] = ori_predictions
         if 'image' in data:
             data.pop('image')
 

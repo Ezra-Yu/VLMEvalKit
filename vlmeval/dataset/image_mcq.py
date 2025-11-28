@@ -240,7 +240,8 @@ class ImageMCQDataset(ImageBaseDataset):
 
     def evaluate_heuristic(self, eval_file, **judge_kwargs):
         from .utils.multiple_choice import (
-            report_acc, report_acc_MMT, report_acc_MMSci, mcq_circular_eval, mcq_vanilla_eval
+            report_acc, report_acc_MMT, report_acc_MMSci, mcq_circular_eval, 
+            mcq_vanilla_eval, report_acc_MMVP
         )
         # assert dataset is not None
         dataset_map = {
@@ -306,6 +307,8 @@ class ImageMCQDataset(ImageBaseDataset):
         # May have different report acc functions for different datasets
         if 'MMT' in dataset:
             acc = report_acc_MMT(data)
+        elif 'MMVP' in dataset:
+            acc = report_acc_MMVP(data)
         elif 'MMSci' in dataset:
             acc = report_acc_MMSci(data)
         else:
@@ -613,6 +616,8 @@ class MMMUProDataset(MMMUDataset):
     def evaluate(self, eval_file, **judge_kwargs):
         if 'COT' in self.dataset_name:
             data = load(eval_file)
+            from copy import deepcopy
+            data['original_prediction'] = deepcopy(data['prediction'])
             data['prediction'] = [self.cot_postproc(x) for x in data['prediction']]
             tgt = get_intermediate_file_path(eval_file, '_cotpost')
             dump(data, tgt)
@@ -1205,7 +1210,7 @@ class CVBench(ImageMCQDataset):
                 "OPENAI_API_KEY is not set properly, will use exact matching for evaluation"
             )
             model = None
-
+        name_str = model_name if model is not None else ""
         result_file = get_intermediate_file_path(eval_file, f"_{model_name}_result", "pkl")
 
         data = load(eval_file)
@@ -1233,8 +1238,8 @@ class CVBench(ImageMCQDataset):
         data = mcq_vanilla_eval(
             model, data, meta, nproc, result_file, self.dataset_name
         )
-        dump(data, get_intermediate_file_path(eval_file, f"_{model_name}_result"))
-        data = load(get_intermediate_file_path(eval_file, f"_{model_name}_result"))
+        dump(data, eval_file.replace(f".{suffix}", f"_{name_str}_result.{suffix}"))
+        data = load(eval_file.replace(f".{suffix}", f"_{name_str}_result.{suffix}"))
 
         if all(data["split"] == "2D"):  # 2D
             acc = self.report_accuracy(data)

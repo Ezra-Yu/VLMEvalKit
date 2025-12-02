@@ -505,12 +505,14 @@ def extract_answer_from_item(model, item, dataset_name=None):
             prompt = build_prompt_plus(item['question'], option_str, item['prediction'])
         else:
             prompt = build_prompt(item['question'], option_str, item['prediction'])
-    retry = 3
+    retry = 5
 
     if dataset_name is not None and 'LEGO' in dataset_name:
         ret = can_infer_lego(item['prediction'], item['question_type'], choices)
     else:
         ret = can_infer(item['prediction'], choices)
+        if not ret and re.match(r".*\\boxed{(.*)}$", item['prediction'], flags=re.S):
+            ret = can_infer(re.match(r".*\\boxed{(.*)}$", item['prediction'], flags=re.S).group(1), choices) 
 
     if ret:
         return dict(opt=ret, log=item['prediction'])
@@ -519,9 +521,9 @@ def extract_answer_from_item(model, item, dataset_name=None):
 
     while retry:
         if os.environ.get('MCQ_MATCH_MODEL_TYPE', "selfgptoss") != "chatgpt35":
-            ans = model.generate(prompt)
-        else:
             ans = model.generate(prompt, max_tokens=8192)
+        else:
+            ans = model.generate(prompt)
         if 'Failed to obtain answer via API' in ans:
             logger.warning('GPT API failed to answer. ')
         else:

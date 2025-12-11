@@ -1,3 +1,4 @@
+import re
 from ...smp import *
 from ...utils import can_infer
 import timeout_decorator
@@ -115,6 +116,10 @@ def post_check(line, prefetch=False):
         else:
             res = str(response)
             ans = str(ans)
+            if "boxed" in ans:
+                match = re.search(r'\\boxed\{([^}]*)\}', ans)
+                if match:
+                    ans = match.group(1)
     except ValueError:
         pass
 
@@ -137,12 +142,18 @@ def MATH_V_auxeval(model, line):
         return dict(log='Prefetch succeed', res=res)
     for i in range(retry):
         prediction = line['prediction']
+        if "boxed" in prediction:
+            match = re.search(r'\(?\\boxed\{([^}]*)\}\)?$', prediction)
+            if match:
+                prediction = match.group(1)
         res = model.generate(prompt, temperature=i * 0.5)
 
         if FAIL_MSG in res:
             log += f'Try {i}: output is {prediction}, failed to parse.\n'
         else:
             log += 'Succeed'
+            if "\(" in res and "\)" in res:
+                res = res.replace("\(", "").replace("\)", "")
             return dict(log=log, res=res)
     log += 'All 5 retries failed.\n'
     return dict(log=log, res='')
@@ -155,6 +166,7 @@ def MATH_V_acc(result_file):
     hit = defaultdict(lambda: 0)
     lt = len(data)
     from tqdm import tqdm
+    scores = []
     for i in tqdm(range(lt)):
         item = data.iloc[i]
         cate = item['category']
@@ -163,10 +175,14 @@ def MATH_V_acc(result_file):
         if item['log'] == 'Prefetch succeed':
             fetch['Overall'] += 1
             fetch[cate] += 1
-        if post_check(item, prefetch=False):
+        score = post_check(item, prefetch=False)
+        if score:
             hit['Overall'] += 1
             hit[cate] += 1
+        scores.append(int(score))
 
+    data['score'] = scores
+    data = dump(data, result_file)
     res = defaultdict(list)
     for k in tot.keys():
         res['Subject'].append(k)

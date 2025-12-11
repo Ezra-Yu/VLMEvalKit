@@ -91,6 +91,37 @@ def report_acc(df):
     return pd.DataFrame(res)
 
 
+def report_acc_MMVP(df):
+    """
+    计算case-layer和question-layer的准确率
+    
+    参数:
+    df : DataFrame - 包含index, question, hit等列的数据框
+    
+    返回:
+    tuple - (case_acc, question_acc) 分别表示case层和question层的准确率
+    """
+    # 计算question-layer准确率（所有问题的平均正确率）
+    question_acc = df['hit'].mean()
+    
+    # 计算case-layer准确率
+    # 步骤1：创建case_id列 (每两个index共享同一个case_id)
+    df['case_id'] = (df['index'] - 1) // 2
+    
+    # 步骤2：按case_id分组，计算每个case内所有hit的乘积
+    # (当且仅当两个问题都正确时乘积为1)
+    case_hits = df.groupby('case_id')['hit'].prod()
+    
+    # 步骤3：计算case准确率
+    case_acc = case_hits.mean()
+
+    return pd.DataFrame(
+        {
+            "case_accuray": [case_acc], 
+            "question_accuray" : [question_acc]
+        }
+    )
+
 def report_acc_MMT(df):
     # assert group in [None, 'category', 'l2-category']
     res = defaultdict(list)
@@ -174,6 +205,108 @@ def report_acc_MMSci(df):
     full_acc_df = full_acc_df[column_order]
     return full_acc_df
 
+def build_prompt_plus(question, options, prediction):
+    tmpl = (
+        "### Instruction:\n"
+        "You are an intelligent evaluator. Your task is to match a model's prediction with the correct option from a multiple-choice question.\n"
+        "1. Read the Question, Options, and the Prediction.\n"
+        "2. Identify which option (A, B, C, D, etc.) is semantically closest to the Prediction.\n"
+        "3. If the Prediction matches the meaning of an option (even if not identical words), choose that option.\n"
+        "4. If the Prediction is completely unrelated or incorrect compared to all options, output Z.\n"
+        "5. Output ONLY the uppercase letter of the correct option. Do not output any explanation or punctuation.\n\n"
+        "### Examples:\n"
+        "Question: What is the main object in image?\n"
+        "Options: A. teddy bear B. rabbit C. cat D. dog\n"
+        "Prediction: a cute teddy bear\n"
+        "Output: A\n\n"
+        "Question: What is the color of the car?\n"
+        "Options: A. Red B. Blue C. Green\n"
+        "Prediction: Scarlet\n"
+        "Output: A\n\n"
+        "Question: What is the main object in image?\n"
+        "Options: A. teddy bear B. rabbit C. cat D. dog\n"
+        "Prediction: Spider\n"
+        "Output: Z\n\n"
+        "### Task Input:\n"
+        "Question: {}\n"
+        "Options: {}\n"
+        "Prediction: {}\n"
+        "Output: "
+    )
+    return tmpl.format(question, options, prediction)
+
+
+def build_prompt_cn_plus(question, options, prediction):
+    tmpl = (
+        "### 指令:\n"
+        "你是一个智能评估助手。你的任务是将模型的预测答案与单选题的选项进行匹配。\n"
+        "1. 阅读问题、选项列表和预测答案。\n"
+        "2. 找出与预测答案在语义上最接近的选项（A, B, C, D 等）。\n"
+        "3. 如果预测答案是选项的同义词、子类别或语义包含，请选择对应的选项。\n"
+        "4. 如果预测答案与所有选项的含义都完全不相关或明显错误，请输出 Z。\n"
+        "5. 请仅输出一个大写字母作为结果。不要输出任何解释、标点符号或其他文字。\n\n"
+        "### 示例:\n"
+        "问题: 图中最主要的物体是什么?\n"
+        "选项: A. 泰迪熊 B. 兔子 C. 猫 D. 狗\n"
+        "预测答案: 一只可爱的泰迪熊\n"
+        "输出: A\n\n"
+        "问题: 汽车是什么颜色的?\n"
+        "选项: A. 红色 B. 蓝色 C. 绿色\n"
+        "预测答案: 猩红\n"
+        "输出: A\n\n"
+        "问题: 图中最主要的物体是什么?\n"
+        "选项: A. 泰迪熊 B. 兔子 C. 猫 D. 狗\n"
+        "预测答案: 蜘蛛\n"
+        "输出: Z\n\n"
+        "### 待处理输入:\n"
+        "问题: {}\n"
+        "选项: {}\n"
+        "预测答案: {}\n"
+        "输出: "
+    )
+    return tmpl.format(question, options, prediction)
+
+
+def build_prompt_blink_plus(question, options, prediction):
+    tmpl = (
+        "You are an intelligent evaluation assistant. Your task is to match a model's predicted answer with the correct option from a multiple-choice list.\n\n"
+        "### Instructions:\n"
+        "1. Read the Question, Options, and the Predicted Answer.\n"
+        "2. Compare the semantic meaning of the Predicted Answer against each Option.\n"
+        "3. If the Predicted Answer clearly matches one option, output the corresponding letter (e.g., (A), (B)).\n"
+        "4. Output '(Z)' if:\n"
+        "   - The answer refuses to reply (e.g., \"I cannot help\", \"I don't know\").\n"
+        "   - The answer's meaning is significantly different from all provided options.\n"
+        "   - The answer concludes that none of the options are correct.\n"
+        "5. Output ONLY the option letter in parentheses. Do not explain.\n\n"
+        "### Examples:\n\n"
+        "Example 1:\n"
+        "Question: Which point is closer to the camera?\n"
+        "Options: (A) Point A\n(B) Point B\n"
+        "Predicted Answer: Point B, where the child is sitting, is closer to the camera.\n"
+        "Output: (B)\n\n"
+        "Example 2:\n"
+        "Question: Identify the object in the red box.\n"
+        "Options: (A) Dog\n(B) Cat\n(C) Bird\n"
+        "Predicted Answer: I'm sorry, but I cannot assist with identifying real people or specific locations.\n"
+        "Output: (Z)\n\n"
+        "Example 3:\n"
+        "Question: What color is the car?\n"
+        "Options: (A) Red\n(B) Blue\n"
+        "Predicted Answer: The car is definitely green, which is not listed here.\n"
+        "Output: (Z)\n\n"
+        "Example 4:\n"
+        "Question: Which object corresponds to the reference?\n"
+        "Options: (A) Point A\n(B) Point B\n(C) Point C\n"
+        "Predicted Answer: After analyzing the image, Point A is the handle, Point B is the bottom. Neither matches the reference point on the pot. Thus, no option is correct.\n"
+        "Output: (Z)\n\n"
+        "### Test Case:\n"
+        "Question: {}\n"
+        "Options: {}\n"
+        "Predicted Answer: {}\n"
+        "Output: "
+    )
+    return tmpl.format(question, options, prediction)
 
 def report_topviewrs_acc(df):
     # assert group in [None, 'category', 'l2-category']
@@ -354,28 +487,43 @@ def extract_answer_from_item(model, item, dataset_name=None):
     option_str = build_option_str(choices)
 
     if dataset_name == 'BLINK':
-        prompt = build_prompt_blink(item['question'], option_str, item['prediction'])
+        if os.environ.get('MCQ_MATCH_MODEL_TYPE', "selfgptoss") != "chatgpt35":
+            prompt = build_prompt_blink_plus(item['question'], option_str, item['prediction'])
+        else:
+            prompt = build_prompt_blink(item['question'], option_str, item['prediction'])
     elif dataset_name == 'WeMath':
         prompt = build_prompt_wemath(item['question'], option_str, item['prediction'])
     elif cn_string(item['question']):
-        prompt = build_prompt_cn(item['question'], option_str, item['prediction'])
+        if os.environ.get('MCQ_MATCH_MODEL_TYPE', "selfgptoss") != "chatgpt35":
+            prompt = build_prompt_cn_plus(item['question'], option_str, item['prediction'])
+        else:
+            prompt = build_prompt_cn(item['question'], option_str, item['prediction'])
     elif dataset_name is not None and 'LEGO' in dataset_name:
         prompt = build_prompt_LEGO(item['question'], option_str, item['prediction'],item['question_type'])
     else:
-        prompt = build_prompt(item['question'], option_str, item['prediction'])
-    retry = 3
+        if os.environ.get('MCQ_MATCH_MODEL_TYPE', "selfgptoss") != "chatgpt35":
+            prompt = build_prompt_plus(item['question'], option_str, item['prediction'])
+        else:
+            prompt = build_prompt(item['question'], option_str, item['prediction'])
+    retry = 5
 
     if dataset_name is not None and 'LEGO' in dataset_name:
         ret = can_infer_lego(item['prediction'], item['question_type'], choices)
     else:
         ret = can_infer(item['prediction'], choices)
+        if not ret and re.match(r".*\\boxed{(.*)}$", item['prediction'], flags=re.S):
+            ret = can_infer(re.match(r".*\\boxed{(.*)}$", item['prediction'], flags=re.S).group(1), choices) 
+
     if ret:
         return dict(opt=ret, log=item['prediction'])
     if model is None:
         return dict(opt='Z', log='Failed in Prefetch, no GPT-based answer matching under `exact_matching` policy.')
 
     while retry:
-        ans = model.generate(prompt)
+        if os.environ.get('MCQ_MATCH_MODEL_TYPE', "selfgptoss") != "chatgpt35":
+            ans = model.generate(prompt, max_tokens=8192)
+        else:
+            ans = model.generate(prompt)
         if 'Failed to obtain answer via API' in ans:
             logger.warning('GPT API failed to answer. ')
         else:
@@ -579,6 +727,11 @@ def extract_characters_regex(s, choices=['(A)', '(B)', '(C)', '(D)', '(E)']):
     if type(s) is dict:
         s = ''
     s = s.strip()
+    match = re.search(r'.*\\boxed\{([^}]*)\}', text)
+
+    if match and match.group(1) in choices:
+        return match.group(1)
+
     answer_prefixes = [
         'The best answer is',
         'The correct answer is',

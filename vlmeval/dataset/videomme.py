@@ -74,11 +74,20 @@ Respond with only the letter (A, B, C, or D) of the correct option.
                     return False
             return True
 
-        cache_path = get_cache_path(repo_id)
-        if cache_path is not None and check_integrity(cache_path):
-            dataset_path = cache_path
-        else:
+        dataset_path = None
+        lmu_root = LMUDataRoot()
+        if osp.exists(osp.join(lmu_root, f'{dataset_name}.tsv')):
+            md5sum = md5(osp.join(lmu_root, f'{dataset_name}.tsv'))
+            if md5sum == self.MD5:
+                dataset_path = lmu_root
+            else:
+                print(f'The dataset {dataset_name} is not found in LMUData, will download from HF.')
 
+        cache_path = get_cache_path(repo_id)
+        if dataset_path is None and cache_path is not None and check_integrity(cache_path):
+            dataset_path = cache_path
+        
+        if dataset_path is None:
             def unzip_hf_zip(pth):
                 import zipfile
                 base_dir = pth
@@ -217,8 +226,12 @@ Respond with only the letter (A, B, C, or D) of the correct option.
         if video_llm:
             message.append(dict(type='video', value=osp.join(self.data_root, 'video', line['video'] + '.mp4')))
         else:
+            count = 0
             for im in frames:
                 message.append(dict(type='image', value=im))
+                count += 1
+
+            print(f"Image Count: {count}")
 
         text_prompt = self.FRAMES_TMPL_NOSUB if not self.use_subtitle else self.FRAMES_TMPL_SUB.format(subtitles)
         message.append(dict(type='text', value=text_prompt))
@@ -229,7 +242,7 @@ Respond with only the letter (A, B, C, or D) of the correct option.
 
     # It returns a dictionary
     @classmethod
-    def evaluate(self, eval_file, **judge_kwargs):
+    def evaluate_(self, eval_file, **judge_kwargs):
         from .utils.videomme import get_dimension_rating, extract_characters_regex, extract_option
 
         assert get_file_extension(eval_file) in ['xlsx', 'json', 'tsv'], 'data file should be an supported format (xlsx/json/tsv) file'  # noqa: E501
@@ -286,3 +299,41 @@ Respond with only the letter (A, B, C, or D) of the correct option.
         rating = get_dimension_rating(score_file)
         dump(rating, tgt_file)
         return rating
+
+    # It returns a json dict
+    @classmethod
+    def evaluate(self, eval_file, **judge_kwargs): 
+        from .utils.videomme import get_dimension_rating
+        from .utils.xverify import VQAxVerifyEvaluator
+
+        model = judge_kwargs.get('model', 'xverify')
+        suffix = eval_file.split('.')[-1]
+        storage = eval_file.replace(f'.{suffix}', f'_{model}.xlsx')
+        data = load(eval_file)
+        if os.path.exists(storage):
+            score_pth = storage.replace('.xlsx', '_score.json')
+            if os.path.exists(score_pth):
+                return load(score_pth)
+            else:
+                data = load(storage)
+                acc = get_dimension_rating(storage)
+                dump(acc, score_pth)
+                return acc
+
+        predictions = data['prediction'].tolist()
+        predictions = [x.split("</think>")[1].strip() if "</think>" in x else x for x in predictions]
+        answers = data['answer'].tolist()
+
+        questions = data['question'].tolist()
+        candidates = data['candidates'].tolist()
+        questions = [q + '\nOptions:\n' + '\n'.join(options) for q, options in zip(questions, candidates)]
+       
+        xverify = VQAxVerifyEvaluator(dataset_name="Video-MME")
+        results = xverify.score(predictions, answers, questions )
+        data['score'] = results
+        
+        dump(data, storage)
+        score_pth = storage.replace('.xlsx', '_score.json')
+        acc = get_dimension_rating(storage)
+        dump(acc, score_pth)
+        return acc

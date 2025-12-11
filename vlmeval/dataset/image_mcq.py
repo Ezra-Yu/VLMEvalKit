@@ -85,6 +85,7 @@ class ImageMCQDataset(ImageBaseDataset):
         'R-Bench-Dis': 'https://huggingface.co/datasets/lcysyzxdxc/R-Bench/resolve/main/R-bench-dis.tsv',
         'R-Bench-Ref': 'https://huggingface.co/datasets/lcysyzxdxc/R-Bench/resolve/main/R-bench-ref.tsv',
         # Other Benchmarks
+        'VP_BENCH_STAGE1': 'https://modelscope.cn/datasets/VP-Bench/VP-Bench_stage_1_VLMEvalKit/resolve/master/vp_bench_stage_1.tsv',
         'CCBench': 'https://opencompass.openxlab.space/utils/VLMEval/CCBench.tsv',
         'AI2D_TEST': 'https://opencompass.openxlab.space/utils/VLMEval/AI2D_TEST.tsv',
         'AI2D_TEST_NO_MASK': 'https://opencompass.openxlab.space/utils/VLMEval/AI2D_TEST_NO_MASK.tsv',
@@ -169,6 +170,7 @@ class ImageMCQDataset(ImageBaseDataset):
         'CCBench': 'f5dde47f24dc5a6fb6e595b409b466ac',
         'AI2D_TEST': '0f593e0d1c7df9a3d69bf1f947e71975',
         'AI2D_TEST_NO_MASK': 'fd8f463634d4fe9fbd23b876e8eea5be',
+        'VP_BENCH_STAGE1': '9fddde8dbc02e338086aaf674287028e',
         'MMStar': 'e1ecd2140806c1b1bbf54b43372efb9e',
         'MMStar_KO': 'cc6049c7314bb54b9ac5e247a2bfb357',
         'RealWorldQA': '4de008f55dc4fd008ca9e15321dc44b7',
@@ -240,7 +242,8 @@ class ImageMCQDataset(ImageBaseDataset):
 
     def evaluate_heuristic(self, eval_file, **judge_kwargs):
         from .utils.multiple_choice import (
-            report_acc, report_acc_MMT, report_acc_MMSci, mcq_circular_eval, mcq_vanilla_eval
+            report_acc, report_acc_MMT, report_acc_MMSci, mcq_circular_eval, 
+            mcq_vanilla_eval, report_acc_MMVP
         )
         # assert dataset is not None
         dataset_map = {
@@ -306,6 +309,8 @@ class ImageMCQDataset(ImageBaseDataset):
         # May have different report acc functions for different datasets
         if 'MMT' in dataset:
             acc = report_acc_MMT(data)
+        elif 'MMVP' in dataset:
+            acc = report_acc_MMVP(data)
         elif 'MMSci' in dataset:
             acc = report_acc_MMSci(data)
         else:
@@ -613,6 +618,8 @@ class MMMUProDataset(MMMUDataset):
     def evaluate(self, eval_file, **judge_kwargs):
         if 'COT' in self.dataset_name:
             data = load(eval_file)
+            from copy import deepcopy
+            data['original_prediction'] = deepcopy(data['prediction'])
             data['prediction'] = [self.cot_postproc(x) for x in data['prediction']]
             tgt = get_intermediate_file_path(eval_file, '_cotpost')
             dump(data, tgt)
@@ -1188,9 +1195,9 @@ class CVBench(ImageMCQDataset):
 
     def evaluate(self, eval_file, **judge_kwargs):
         from .utils.multiple_choice import mcq_vanilla_eval, report_acc
+        suffix = eval_file.split('.')[-1]
 
         nproc = judge_kwargs.pop("nproc", 4)
-
         model_name = judge_kwargs.get("model", "extract_matching")
 
         if model_name == "exact_matching":
@@ -1205,7 +1212,7 @@ class CVBench(ImageMCQDataset):
                 "OPENAI_API_KEY is not set properly, will use exact matching for evaluation"
             )
             model = None
-
+        name_str = model_name if model is not None else ""
         result_file = get_intermediate_file_path(eval_file, f"_{model_name}_result", "pkl")
 
         data = load(eval_file)
@@ -1233,8 +1240,8 @@ class CVBench(ImageMCQDataset):
         data = mcq_vanilla_eval(
             model, data, meta, nproc, result_file, self.dataset_name
         )
-        dump(data, get_intermediate_file_path(eval_file, f"_{model_name}_result"))
-        data = load(get_intermediate_file_path(eval_file, f"_{model_name}_result"))
+        dump(data, eval_file.replace(f".{suffix}", f"_{name_str}_result.{suffix}"))
+        data = load(eval_file.replace(f".{suffix}", f"_{name_str}_result.{suffix}"))
 
         if all(data["split"] == "2D"):  # 2D
             acc = self.report_accuracy(data)

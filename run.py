@@ -1,8 +1,47 @@
 import json
 import os
+import re
 import subprocess
 from functools import partial
 
+
+def encode_dataset_name(base_name, test_range=""):
+    """
+    将数据集名称和切片参数编码为一个字符串。
+    
+    :param base_name: 基础数据集名称
+    :param test_range: 切片范围字符串，如 "[::2]", "[:50]" 等
+    :return: 编码后的数据集名称
+    """
+    if not test_range:
+        return base_name
+
+    # 使用正则表达式解析 test_range
+    pattern = r'\[(\-?\d*)?:(\-?\d*)?(?::(\-?\d+))?\]'
+    match = re.match(pattern, test_range)
+    
+    if not match:
+        raise ValueError(f"Invalid test_range format: {test_range}")
+
+    start, end, step = match.groups()
+    
+    # 处理空参数
+    start = start if start is not None else ""
+    end = end if end is not None else ""
+    step = step if step is not None else ""
+
+    slice_params = []
+    if start and start != "0":
+        slice_params.append(f"from{start}")
+    if end:
+        slice_params.append(f"to{end}")
+    if step and step != "1":  # 注意：step 是字符串，需要与字符串比较
+        slice_params.append(f"step{step}")
+    
+    if slice_params:
+        return f"{base_name}_{'_'.join(slice_params)}"
+    else:
+        return base_name
 
 # GET the number of GPUs on the node without importing libs like torch
 def get_gpu_list():
@@ -190,6 +229,7 @@ You can launch the evaluation by setting either --data and --model or --config.
     parser.add_argument('--ignore', action='store_true', help='Ignore failed indices. ')
     # Reuse: will reuse the existing prediction files
     parser.add_argument('--reuse', action='store_true')
+    parser.add_argument('--temp', action='store_true')
     # Reuse-aux: if set, when reuse is True, will also reuse the auxiliary evaluation files
     parser.add_argument('--reuse-aux', type=int, default=True, help='reuse auxiliary evaluation files')
     parser.add_argument(
@@ -288,6 +328,23 @@ def main():
                     if dataset_name in ['MMLongBench_DOC', 'DUDE', 'DUDE_MINI', 'SLIDEVQA', 'SLIDEVQA_MINI']:
                         dataset_kwargs['model'] = model_name
 
+                    # 解析 dataset_name 中的切片表达式
+                    original_dataset_name = dataset_name
+                    test_range = None
+
+                    # 检查 dataset_name 是否包含切片表达式 (如 [start:end:step])
+                    if re.search(r'\[\s*[-?\d]*\s*:\s*[-?\d]*\s*(?::\s*[-?\d]+\s*)?\]$', dataset_name):
+                        # 提取切片表达式部分 (如 [:100])
+                        match = re.search(r'(\[\s*[-?\d]*\s*:\s*[-?\d]*\s*(?::\s*[-?\d]+\s*)?\])$', dataset_name)
+                        if match:
+                            test_range = match.group(1).strip()
+                            # 更新 dataset_name 为去除切片表达式的基础名称
+                            dataset_name = dataset_name[:match.start()].strip()
+
+                    # 添加切片参数到 kwargs
+                    if test_range:
+                        dataset_kwargs['test_range'] = test_range
+
                     # If distributed, first build the dataset on the main process for doing preparation works
                     if WORLD_SIZE > 1:
                         if RANK == 0:
@@ -296,8 +353,14 @@ def main():
 
                     dataset = build_dataset(dataset_name, **dataset_kwargs)
                     if dataset is None:
+                        raise ValueError( str((dataset_name, dataset_kwargs)) )
+                    dataset.dataset_name = encode_dataset_name(dataset.dataset_name, test_range=test_range)
+                    dataset_name = dataset.dataset_name
+                    if dataset is None:
                         logger.error(f'Dataset {dataset_name} is not valid, will be skipped. ')
                         continue
+                
+                result_file_base = f'{model_name}_{dataset_name}.xlsx'
 
                 # Handling Multi-Turn Dataset
                 result_file = osp.join(pred_root, result_file_base)
@@ -368,7 +431,7 @@ def main():
                         if listinstr(['WeMath', 'MME-Reasoning'], dataset_name):
                             judge_kwargs['model'] = 'gpt-4o-mini'
                         elif listinstr(['VisuLogic'], dataset_name):
-                            judge_kwargs['model'] = 'exact_matching'
+                            judge_kwargs['model'] = 'gpt-4o-mini'
                         else:
                             judge_kwargs['model'] = 'chatgpt-0125'
                     elif listinstr(['MMVet', 'LLaVABench', 'MMBench_Video'], dataset_name):
@@ -378,15 +441,17 @@ def main():
                             judge_kwargs['model'] = 'gpt-4-turbo'
                     elif listinstr(['VGRPBench'], dataset_name):
                         judge_kwargs['model'] = 'gpt-4o'
-                    elif listinstr(['MathVista', 'MathVerse', 'MathVision', 'DynaMath', 'VL-RewardBench', 'LogicVista', 'MOAT', 'OCR_Reasoning'], dataset_name):  # noqa: E501
+                    elif listinstr(['CharXiv_reasoning_val'], dataset_name):
+                        judge_kwargs['model'] = 'xhs-deepseek' 
+                    elif listinstr(['ChartMuseum'], dataset_name):
+                        judge_kwargs['model'] = 'gptoss-120b'
+                    elif listinstr(['MMLongBench', 'MathVista', 'MathVerse', 'MathVision', 'DynaMath', 'VL-RewardBench', 'LogicVista', 'MOAT', 'OCR_Reasoning', 'CharXiv_descriptive_val'], dataset_name):  # noqa: E501
                         judge_kwargs['model'] = 'gpt-4o-mini'
                     elif listinstr(['OlympiadBench'], dataset_name):
                         use_api_judger = judge_kwargs.get("olympiad_use_api_judger", False)
                         if use_api_judger:
-                            judge_kwargs['model'] = 'gpt-4o-mini'
-                    elif listinstr(['MMLongBench', 'MMDU', 'DUDE', 'SLIDEVQA', 'MIA-Bench', 'WildVision', 'MMAlignBench', 'MM-IFEval'], dataset_name):  # noqa: E501
-                        judge_kwargs['model'] = 'gpt-4o'
-                    elif listinstr(['ChartMimic'], dataset_name):
+                            judge_kwargs['model'] = 'gpt-4o-mini' 
+                    elif listinstr(['ChartMimic', 'MMDU', 'DUDE', 'SLIDEVQA', 'MIA-Bench', 'WildVision', 'MMAlignBench', 'MM-IFEval'], dataset_name):  # noqa: E501
                         judge_kwargs['model'] = 'gpt-4o'
                     elif listinstr(['VDC'], dataset_name):
                         judge_kwargs['model'] = 'llama31-8b'
@@ -402,6 +467,11 @@ def main():
                         judge_kwargs['model'] = 'gpt-4.1'
                     elif listinstr(['MathCanvas'], dataset_name):
                         judge_kwargs['model'] = 'gpt-4.1-2025-04-14'
+
+                if args.use_verifier:
+                    judge_kwargs['use_verifier'] = True
+                if args.use_vllm:
+                    judge_kwargs['use_vllm'] = True
 
                 if args.use_verifier:
                     judge_kwargs['use_verifier'] = True
@@ -458,6 +528,16 @@ def main():
                     old_proxy = os.environ.get('HTTP_PROXY', '')
                     if eval_proxy is not None:
                         proxy_set(eval_proxy)
+
+                    # 当为 xhs-deepseek 和 gpt4o 时, 并发需要降低
+                    if judge_kwargs.get('model', None) == 'xhs-deepseek':
+                        judge_kwargs['nproc'] = min(judge_kwargs['nproc'], 8)
+                    elif judge_kwargs.get('model', None) == 'gpt-4o':
+                        judge_kwargs['nproc'] = min(judge_kwargs['nproc'], 4)
+                    elif judge_kwargs.get('model', None) == 'chatgpt-0125':
+                        judge_kwargs['nproc'] = min(judge_kwargs['nproc'], 48)
+                    elif judge_kwargs.get('model', None) == 'gpt-4o-mini':
+                        judge_kwargs['nproc'] = min(judge_kwargs['nproc'], 32)
 
                     # Perform the Evaluation
                     eval_results = dataset.evaluate(result_file, **judge_kwargs)

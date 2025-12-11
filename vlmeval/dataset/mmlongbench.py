@@ -3,6 +3,8 @@ import math
 from urllib.request import urlopen
 from PIL import Image, ImageDraw, ImageFont
 import torchvision.transforms as transforms
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from tqdm import tqdm
 
 from vlmeval.dataset.utils import build_judge, levenshtein_distance
 from vlmeval.smp import *
@@ -448,13 +450,12 @@ class MMLongBench(ImageBaseDataset):
     def __init__(self, dataset, **kwargs):
         self.model_list = list(self.SUPPORTED_MODELS.keys())
         model_name = kwargs['model']
-        if not listinstr(self.model_list, model_name):
-            raise AssertionError("{} doesn't support the evaluation on MMLongBench_DOC.".format(model_name))
+        # if not listinstr(self.model_list, model_name):
+        #     raise AssertionError("{} doesn't support the evaluation on MMLongBench_DOC.".format(model_name))
         super(MMLongBench, self).__init__(dataset)
-
-        self.is_api = True if listinstr(['GPT4'], model_name) else False
+        self.is_api = True if listinstr(['GPT4', 'xhs_api', 'xhs-seedvl', "GeminiPro2-5-32k"], model_name) else False
         self.max_pages = 120
-        concat_num, column_num = self.SUPPORTED_MODELS.get(model_name)
+        concat_num, column_num = self.SUPPORTED_MODELS.get(model_name, (1, 1))
         self.concat_num = concat_num
         self.column_num = column_num
 
@@ -538,6 +539,7 @@ class MMLongBench(ImageBaseDataset):
     def evaluate(self, eval_file, **judge_kwargs):
         logger = get_logger('Evaluation')
         model = judge_kwargs['model']
+        max_workers = judge_kwargs['nproc']
 
         storage = get_intermediate_file_path(eval_file, f'_{model}')
         tmp_file = get_intermediate_file_path(eval_file, f'_{model}', 'pkl')
@@ -560,9 +562,13 @@ class MMLongBench(ImageBaseDataset):
 
             if len(indices):
                 new_results = list()
-                for model, line in tqdm(tups):
-                    res = MMLongBench_auxeval(model, line)
-                    new_results.append(res)
+                results = [None] * len(tups)
+                with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                    future_to_idx = {executor.submit(MMLongBench_auxeval, model, line): i for i, (model, line) in enumerate(tups)}
+                    for future in tqdm(as_completed(future_to_idx), total=len(tups)):
+                        idx = future_to_idx[future]
+                        results[idx] = future.result()
+                new_results = results
 
             log_map, res_map, pred_map = {}, {}, {}
             all_inds = [line['index'] for line in lines]

@@ -3,6 +3,8 @@ import json
 from typing import Dict, List, Tuple, Any, Union
 import pandas as pd
 import warnings
+import random
+from time import sleep
 
 from vlmeval.dataset.image_base import ImageBaseDataset
 from vlmeval.smp import misc, file
@@ -23,15 +25,26 @@ def auxeval(judge_model: Any, line: pd.Series, **kwargs: Any) -> Dict[str, Any]:
     Returns:
         Dict containing evaluation results with extract_answer and score
     """
-    failure_result = {"extract_answer": "Failed to parse response", "score": 0.0}
+    failure_result = {"extract_answer": "Failed to parse response", "score": 0.0, "response": None}
+    if "<think>" in line["prediction"] and "</think>" not in line["prediction"]:
+        return {"extract_answer" : "'<think>....' pattern, treat not finished inference result.", "score": 0.0, "response": None}
     prompt = line["grading_query"].replace("{PREDICTION}", line["prediction"])
 
-    retry = kwargs.get("retry", 10)
-    max_tokens = kwargs.get("max_tokens", 256)
-    temperature = kwargs.get("temperature", 0)
+    retry = kwargs.get("retry", 3)
+    if "oss" in judge_model.model:
+        max_tokens = kwargs.get("max_tokens", 8192)
+        temperature = kwargs.get("temperature", 0.1)
+        judge_model.timeout = kwargs.get("timeout", 1200)
+        extra_kwargs = {"reasoning_effort": "high"}
+    else:
+        max_tokens = kwargs.get("max_tokens", 256)
+        temperature = kwargs.get("temperature", 0)
+        extra_kwargs = {}
     seed = kwargs.get("seed", 42)
     top_p = kwargs.get("top_p", 1)
 
+    from copy import deepcopy
+    _content = deepcopy(failure_result)
     for _ in range(retry):
         try:
             response = judge_model.generate(
@@ -40,17 +53,33 @@ def auxeval(judge_model: Any, line: pd.Series, **kwargs: Any) -> Dict[str, Any]:
                 max_tokens=max_tokens,
                 seed=seed,
                 top_p=top_p,
+                **extra_kwargs,
             )
-            content = json.loads(response)
-            if not isinstance(content, dict):
-                return failure_result
-            if "score" not in content or "extract_answer" not in content:
-                return failure_result
-            return content
-        except Exception:
-            continue
+            if response.startswith("```json"):
+                response = response[7:]
+            if response.endswith("```"):
+                response = response[:-3]
+            try:
+                content = json.loads(response.strip())
+            except json.JSONDecodeError as e:         
+                try:
+                    import ast
+                    content = ast.literal_eval(response.strip())
+                except Exception as e:
+                    raise e
 
-    return failure_result
+            if not isinstance(content, dict):
+                content = _content
+            if "score" not in content or "extract_answer" not in content:
+                content = _content
+            content["response"] = str(response)
+            return content
+        except Exception as e:
+            sleep(random.random() * retry)
+            content = _content
+            content["response"] = f"{response} {e}"
+            continue
+    return content
 
 
 def qid2category(mode: str) -> Tuple[Dict[int, str], str]:
@@ -199,9 +228,11 @@ class CharXiv(ImageBaseDataset):
             warnings.warn(
                 f"The judge_model '{judge_model}' is not gpt-4o-mini. Evaluation results may not be accurate."
             )
-
-        judge_model = build_judge(model=judge_model, **judge_kwargs)
+        judge_kwargs["model"] = judge_model
+        judge_model = build_judge(**judge_kwargs)
         judge_model_name = judge_model.model
+        if "/" in judge_model_name:
+            judge_model_name = judge_model_name.replace("/", "_")
 
         # Define file paths
         result_file = get_intermediate_file_path(eval_file, f"_{judge_model_name}")
@@ -231,7 +262,9 @@ class CharXiv(ImageBaseDataset):
 
         # Process remaining examples
         nproc = judge_kwargs.pop("nproc", 4)
+        print(f"nproc: {nproc}")
         if len(indices):
+            print(f"Processing {len(indices)} examples, {len(tups)} total")
             utils.track_progress_rich(
                 auxeval,
                 tups,
@@ -247,6 +280,9 @@ class CharXiv(ImageBaseDataset):
         data["score"] = data.apply(lambda x: processed_results[x.name]["score"], axis=1)
         data["extract_answer"] = data.apply(
             lambda x: processed_results[x.name]["extract_answer"], axis=1
+        )
+        data["response"] = data.apply(
+            lambda x: processed_results[x.name].get("response", ""), axis=1
         )
 
         # Save results and return scores

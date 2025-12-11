@@ -551,7 +551,6 @@ class ChartMimic(ImageBaseDataset):
             ax.set_title("Test Chart")
             plt.savefig(example_pdf_path, format='pdf')
             plt.close()
-
             # Test pdf2image conversion
             images = convert_from_path(example_pdf_path, dpi=350)
             images[0].save(output_png_path, "PNG")

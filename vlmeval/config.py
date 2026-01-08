@@ -2759,7 +2759,12 @@ interns1_groups = [
 interns1_series = {}
 for group in interns1_groups:
     interns1_series.update(group)
-    
+
+for temp in [0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1]:
+    for seq_str, seq_len in [("8k", 8192), ("16k", 16384), ("32k", 28214), ("64k", 58000)]:
+        timeout = 1024 if seq_len == 8192 else 256 if seq_len == 16384 else 512 if seq_len == 28214 else 1024
+        api_models[f"xhs_api-temperature{temp}-{seq_str}"] = partial(XHSVLMAPI, temperature=temp, retry=10, verbose=True, max_tokens=seq_len, timeout=timeout)
+
 supported_VLM = {}
 
 model_groups = [

@@ -83,7 +83,8 @@ def build_judge(**kwargs):
                     "Please set `XHS_GPT_OSS_120B_API_BASE` in '$VLMEVALKIT/.env'")
         model = XHSVLMAPIWrapper(
             'openai/gpt-oss-120b', 
-            api_base=api_base, 
+            api_base=api_base,
+            timeout = 180,
             key=key,
             reasoning_effort = "high",
             retry = 10,
@@ -149,6 +150,7 @@ def build_judge(**kwargs):
                 'openai/gpt-oss-120b', 
                 api_base=api_base, 
                 key=key,
+                timeout = 180,
                 retry = 10,
                 wait = 10,
                 reasoning_effort = "high",

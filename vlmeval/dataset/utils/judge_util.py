@@ -86,7 +86,8 @@ def build_judge(**kwargs):
             api_base=api_base, 
             key=key,
             reasoning_effort = "high",
-            timeout = 300,
+            retry = 10,
+            wait = 10,
             **kwargs)
     elif model == 'chatgpt-0125':
         if os.environ.get('MCQ_MATCH_MODEL_TYPE', "self-gptoss") == "chatgpt35":
@@ -109,7 +110,7 @@ def build_judge(**kwargs):
                 "Please set `ALLLINAI_API_BASE` and `ALLINAI_KEY` in '$VLMEVALKIT/.env'")
             model = XHSVLMAPIWrapper(
                 'gpt-oss-120b', 
-                api_base=api_base, 
+                api_base=api_base,
                 key=key,
                 **kwargs)
         elif os.environ.get('MCQ_MATCH_MODEL_TYPE', "self-gptoss") == "qwen3-32b":
@@ -148,6 +149,8 @@ def build_judge(**kwargs):
                 'openai/gpt-oss-120b', 
                 api_base=api_base, 
                 key=key,
+                retry = 10,
+                wait = 10,
                 reasoning_effort = "high",
                 **kwargs)
         else:

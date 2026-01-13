@@ -611,6 +611,18 @@ class VLLMAPIWrapper(BaseAPI):
         input_msgs = self.prepare_inputs(inputs)
         temperature = kwargs.pop('temperature', self.temperature)
         max_tokens = kwargs.pop('max_tokens', self.max_tokens)
+        
+        # 查看 message 的 图片数量，超过 10张图后，每张图 max_tokens - 500， max_tokens = max(max_tokens, ori_max_tokens//2)
+        image_count = 0
+        for msg in input_msgs:
+            content = msg.get('content', [])
+            if isinstance(content, list):
+                for item in content:
+                    if isinstance(item, dict) and item.get('type') == 'image_url':
+                        image_count += 1
+        
+        if image_count > 10:
+            max_tokens = max(max_tokens -  (image_count - 10) * 500, 8192)
 
         # Will send request if use Azure, dk how to use openai client for it
         if self.key is None:

@@ -415,7 +415,7 @@ def main():
                 judge_kwargs = {
                     # 'nproc': args.api_nproc,
                     'verbose': args.verbose,
-                    'retry': args.retry if args.retry is not None else 3,
+                    'retry': args.retry if args.retry is not None else 6,
                     **(json.loads(args.judge_args) if args.judge_args else {}),
                 }
 

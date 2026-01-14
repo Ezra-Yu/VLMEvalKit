@@ -87,7 +87,6 @@ def build_judge(**kwargs):
             timeout = 180,
             key=key,
             reasoning_effort = "high",
-            retry = 10,
             wait = 10,
             **kwargs)
     elif model == 'chatgpt-0125':
@@ -151,7 +150,6 @@ def build_judge(**kwargs):
                 api_base=api_base, 
                 key=key,
                 timeout = 180,
-                retry = 10,
                 wait = 10,
                 reasoning_effort = "high",
                 **kwargs)

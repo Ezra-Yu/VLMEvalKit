@@ -194,10 +194,14 @@ class ChartMuseum(ImageBaseDataset):
                 save=tmp_file,
             )
         ans = load(tmp_file)
-        for value in ans.values():
+        score_list = [None] * len(pred_list)
+        for key, value in ans.items():
             flag = 'yes' in value[0].lower()
             category_flags[value[1]].append(int(flag))
+            score_list[key-1] = int(flag)
 
+        data['score'] = score_list
+        dump(data, eval_file)
         score = {}
         for cat, flags in category_flags.items():
             score[cat] = [sum(flags) / len(flags) * 100]

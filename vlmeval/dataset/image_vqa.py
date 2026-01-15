@@ -2418,11 +2418,12 @@ class CustomVQADataset(ImageBaseDataset):
         suffix = eval_file.split('.')[-1]
         storage = eval_file.replace(f'.{suffix}', f'_mask.xlsx')
         data = load(eval_file)
-        data.pop('mask')
-        dump(data, storage)
         
+        
+        score_list = [None] * len(data)
+        point_list = [None] * len(data)
         acc = 0
-        for pred, item in tqdm(zip(data['prediction'].tolist(), self.data.to_dict(orient='records'))):
+        for i, (pred, item) in tqdm(enumerate(zip(data['prediction'].tolist(), self.data.to_dict(orient='records')))):
             if isinstance(pred, float) and np.isnan(pred):
                 pred = ""
             if "</think>" in pred:
@@ -2439,14 +2440,19 @@ class CustomVQADataset(ImageBaseDataset):
                 _count = 1
             
             points = extract_coords(pred)
+            
             mask = rle_decode(item['mask'])
             height, width = mask.shape[0], mask.shape[1]
             if os.environ.get('NORMALIZE', "0") == "0":
                 points = points
             else:
                 points = [(int(point[0] / 1000 * width), int(point[1] / 1000 * height)) for point in points]
+            
+            point_list[i] = points
             if len(points) != _count:
                 acc += 0
+                score_list[i] = 0
+                continue
             if _count == 1 and len(points) == 1:
                 point = points[0]
                 if point[0] < 0 or point[0] >= mask.shape[1] or point[1] < 0 or point[1] >= mask.shape[0]:
@@ -2454,8 +2460,10 @@ class CustomVQADataset(ImageBaseDataset):
                 else:
                     if mask[point[1], point[0]] == 1:
                         acc += 1
+                        score_list[i] = 1
                     else:
                         acc += 0
+                        score_list[i] = 0
             else:
                 _acc = 1
                 for point in points:
@@ -2469,6 +2477,11 @@ class CustomVQADataset(ImageBaseDataset):
                             _acc = 0
                             break
                 acc += _acc
+                score_list[i] = _acc
+        
+        data['score'] = score_list
+        data['pred_points'] = point_list
+        dump(data, storage)
         acc = acc / len(data)
         score_pth = get_intermediate_file_path(eval_file, '_score', 'json')
         acc = {'accuracy': acc}
@@ -2477,10 +2490,10 @@ class CustomVQADataset(ImageBaseDataset):
 
     def evaluate_in_mask_RefSpatial(self, eval_file, **judge_kwargs):
         data = load(eval_file)
-        data.pop('mask')
-        dump(data, eval_file)
+        
         
         acc_list = []
+        point_list = [None] * len(data)
         for i, (pred, item) in tqdm(enumerate(zip(data['prediction'].tolist(), self.data.to_dict(orient='records')))):
             if "</think>" in pred:
                 pred = pred.split("</think>")[1].strip()
@@ -2500,7 +2513,11 @@ class CustomVQADataset(ImageBaseDataset):
                     np.zeros(points.shape[0] - in_range.sum())
                 ]).mean()
             acc_list.append(acc)
+            point_list[i] = [f"({point[0]}, {point[1]})" for point in points]
 
+        data['score'] = acc_list
+        data['pred_points'] = point_list
+        dump(data, eval_file)
         acc = sum(acc_list) / len(acc_list)
         score_pth = get_intermediate_file_path(eval_file, '_score', 'json')
         acc = {'accuracy': acc}
@@ -3541,6 +3558,7 @@ class ZEROBench(ImageVQADataset):
         answers = [str(x) for x in data['answers']]
         indexes = [str(x) for x in data['index']]
         output_df = pd.DataFrame(columns=["Question_ID", "Ground_Truth", "Model_Output", "Correct?"])
+        score_list = [None] * len(data)
         for idx, (pred, ans, index) in enumerate(zip(predictions, answers, indexes)):
             formatted_response = pred.strip()
             # convert to lowercase
@@ -3555,6 +3573,7 @@ class ZEROBench(ImageVQADataset):
 
             # evaluate via exact matching
             correct = ans.strip().lower() in parsed_answer.lower()
+            score_list[idx] = int(correct)
             # store results
             results_row = {"Question_ID": idx,
                            "Ground_Truth": ans,
@@ -3565,6 +3584,8 @@ class ZEROBench(ImageVQADataset):
 
         # compute accuracy
         accuracy = output_df["Correct?"].mean()
+        data['score'] = score_list
+        dump(data, eval_file)
         result_file = eval_file.replace(f".{eval_file.split('.')[-1]}", "_acc.json")
         dump( {'accuracy': accuracy}, result_file )
         return {"accuracy": accuracy}

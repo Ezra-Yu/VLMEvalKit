@@ -81,6 +81,7 @@ def process_rawscore(component_type, raw_score):
 
 def get_score_dict(data, score_raw):
     cat_score_dict = {}
+    score_list = [None] * len(data)
     for i in range(len(data)):
         try:
             cmp = data['component_type'][i][2:-2]
@@ -91,12 +92,13 @@ def get_score_dict(data, score_raw):
                     cat_score_dict[key] = [val]
                 else:
                     cat_score_dict[key].append(val)
+            score_list[i] = score_dict['total_score']
         except:
             pass
     cat_score_dict_average = {}
     for key, val in cat_score_dict.items():
         cat_score_dict_average[key] = sum(val) / len(val)
-    return cat_score_dict_average
+    return cat_score_dict_average, score_list
 
 
 class MIABench(ImageBaseDataset):
@@ -121,6 +123,7 @@ class MIABench(ImageBaseDataset):
         storage = get_intermediate_file_path(eval_file, f'_{judge_name}')  # noqa: F841
         tmp_file = get_intermediate_file_path(eval_file, f'_{judge_name}', 'pkl')  # noqa: F841
         nproc = judge_kwargs.pop('nproc', 4)  # noqa: F841
+        data = None
 
         if not osp.exists(storage):
             
@@ -163,7 +166,12 @@ class MIABench(ImageBaseDataset):
             dump(data, storage)
 
         goresult = load(storage)
-        results = get_score_dict(goresult, goresult['score_raw'])
+        results, score_list = get_score_dict(goresult, goresult['score_raw'])
+        if data is None:
+            data = load(eval_file)
+        data['score'] = score_list
+        dump(data, eval_file)
+
         result_pth = get_intermediate_file_path(storage, '_score', 'csv')
         results_pd = pd.DataFrame.from_dict(list(results.items()))
         dump(results_pd, result_pth)

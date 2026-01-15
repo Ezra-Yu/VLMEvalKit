@@ -37,9 +37,10 @@ def extract_coords(pred_str):
 
 def text2pts(text: str, width=640, height=480, is_absolute=False) -> np.ndarray:
     if "[" in text and "]" in text:
-        left_bracket = text.index("[")
-        right_bracket = text.index("]")
-        text = text[left_bracket + 1:right_bracket].strip()
+        left_bracket = text.rindex("[")
+        right_bracket = text.rindex("]")
+        if left_bracket < right_bracket:
+            text = text[left_bracket + 1:right_bracket].strip()
     pattern = r"\(([-+]?\d+\.?\d*(?:,\s*[-+]?\d+\.?\d*)*?)\)"
     matches = re.findall(pattern, text)
     points = []
@@ -48,9 +49,11 @@ def text2pts(text: str, width=640, height=480, is_absolute=False) -> np.ndarray:
         vector = [float(num) if '.' in num else int(num) for num in match.split(',')]
         if len(vector) == 2:
             x, y = vector
-            if not is_absolute and (isinstance(x, float) or isinstance(y, float)):
+            if not is_absolute and (isinstance(x, float) or isinstance(y, float)) and 0 <= x <= 1 and 0 <= y <= 1:
                 x = int(x * width)
                 y = int(y * height)
+            else:
+                x, y = int(x), int(y)
             points.append((x, y))
         elif len(vector) == 4:
             x0, y0, x1, y1 = vector
@@ -2650,9 +2653,33 @@ class CustomVQADataset(ImageBaseDataset):
         data['gt_lat'] = gt_lats
         data['gt_lng'] = gt_lngs
         
-        # 使用 xverify 评估 country 正确性
+        for i, gt_country in enumerate(gt_countries):
+            if gt_country == "Russian Federation (the)":
+                gt_countries[i] = "Russia"
+            elif gt_country == "United States of America (the)":
+                gt_countries[i] = "United States"
+            elif gt_country == "United Kingdom of Great Britain and Northern Ireland (the)":
+                gt_countries[i] = "United Kingdom"
+            elif gt_country == "Bolivia (Plurinational State of)":
+                gt_countries[i] = "Bolivia"
+            elif gt_country == "United Kingdom of Great Britain and Northern Ireland (the)":
+                gt_countries[i] = "United Kingdom"
+            elif gt_country == "Turkiye":
+                gt_countries[i] = "Turkey"
+            elif gt_country == "Philippines (the)":
+                gt_countries[i] = "Philippines"
+            elif gt_country == "United States of America (the)":
+                gt_countries[i] = "United States of America"
+            elif gt_country == "Taiwan (Province of China)":
+                gt_countries[i] = "Taiwan"
+            elif gt_country == "Lao People's Democratic Republic (the)":
+                gt_countries[i] = "Laos"
+            elif gt_country == "Iran (Islamic Republic of)":
+                gt_countries[i] = "Iran"
+            elif gt_country == "Korea (the Republic of)":
+                gt_countries[i] = "South Korea"
         xverify = VQAxVerifyEvaluator(dataset_name="GeoBench")
-        country_questions = [f"Is '{pred}' the same country as '{gt}'?" 
+        country_questions = ["Which country does this image represent? You can use the country's name or abbreviation." 
                            for pred, gt in zip(parsed_countries, gt_countries)]
         country_correct = xverify.score(parsed_countries, gt_countries, country_questions)
         data['country_correct'] = country_correct

@@ -112,8 +112,12 @@ def VisuLogic_acc(result_file):
         tot['Overall'] += 1
         tot[cate] += 1
         if extract_answer(item['prediction'])[0] == item['answer']:
+            data.at[i, 'score'] = 1.0
             hit['Overall'] += 1
             hit[cate] += 1
+        else:
+            data.at[i, 'score'] = 0.0
+    dump(data, result_file)
     res = defaultdict(list)
     for k in categories:
         res['category'].append(k)

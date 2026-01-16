@@ -2443,39 +2443,57 @@ class CustomVQADataset(ImageBaseDataset):
             
             mask = rle_decode(item['mask'])
             height, width = mask.shape[0], mask.shape[1]
-            if os.environ.get('NORMALIZE', "0") == "0":
-                points = points
-            else:
-                points = [(int(point[0] / 1000 * width), int(point[1] / 1000 * height)) for point in points]
+            if all(0<= point[0] <= 1 and 0 <= point[1] <= 1 for point in points):
+                normed_points =  [(int(point[0] * width), int(point[1] * height)) for point in points]
+            else:    
+                normed_points = [(int(point[0] / 1000 * width), int(point[1] / 1000 * height)) for point in points]
             
+            def _check_in_mask(point, mask):
+                if len(point) != 2:
+                    return False
+                x, y = point
+                if x < 0 or x >= mask.shape[1] or y < 0 or y >= mask.shape[0]:
+                    return False
+                if mask[y, x] == 1:
+                    return True
+                else:
+                    return False    
+
             point_list[i] = points
             if len(points) != _count:
                 acc += 0
                 score_list[i] = 0
                 continue
             if _count == 1 and len(points) == 1:
-                point = points[0]
-                if point[0] < 0 or point[0] >= mask.shape[1] or point[1] < 0 or point[1] >= mask.shape[0]:
-                    acc += 0
+                if _check_in_mask(points[0], mask):
+                    score_list[i] = 1
+                    acc += 1
+                    point_list[i] = points
+                elif _check_in_mask(normed_points[0], mask):
+                    score_list[i] = 1
+                    acc += 1
+                    point_list[i] = normed_points
                 else:
-                    if mask[point[1], point[0]] == 1:
-                        acc += 1
-                        score_list[i] = 1
-                    else:
-                        acc += 0
-                        score_list[i] = 0
+                    score_list[i] = 0
+                    acc += 0
+
             else:
                 _acc = 1
                 for point in points:
-                    if point[0] < 0 or point[0] >= mask.shape[1] or point[1] < 0 or point[1] >= mask.shape[0]:
+                    if not _check_in_mask(point, mask):
                         _acc = 0
                         break
-                    else:
-                        if mask[point[1], point[0]] == 1:
-                            _acc = 1
-                        else:
+                
+                if _acc == 0:
+                    for point in normed_points:
+                        if not _check_in_mask(point, mask):
                             _acc = 0
                             break
+                else:
+                    point_list[i] = points 
+
+                if _acc == 1:   
+                    point_list[i] = normed_points   
                 acc += _acc
                 score_list[i] = _acc
         

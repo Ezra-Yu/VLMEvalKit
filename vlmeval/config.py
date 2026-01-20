@@ -604,6 +604,17 @@ api_models = {
         system_prompt=None,
         reasoning_effort="high"
     ),
+    "xhs-seedvl-1.8-minimal" : partial(
+        XHSSEEDVL,
+        temperature=0.7,
+        retry=5,
+        think_mode=True,
+        verbose=True,
+        max_tokens=32768,
+        timeout = 600,
+        system_prompt=None,
+        reasoning_effort="minimal"
+    ),
     "xhs-seedvl-1.8-nothink" : partial(
         XHSSEEDVL,
         temperature=0.7,

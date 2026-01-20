@@ -2415,100 +2415,109 @@ class CustomVQADataset(ImageBaseDataset):
         return acc       
 
     def evaluate_in_mask(self, eval_file, **judge_kwargs):
+        """评估预测的点是否在 mask 区域内"""
         suffix = eval_file.split('.')[-1]
         storage = eval_file.replace(f'.{suffix}', f'_mask.xlsx')
         data = load(eval_file)
         
+        score_list = []
+        point_list = []
+        total_correct = 0
         
-        score_list = [None] * len(data)
-        point_list = [None] * len(data)
-        acc = 0
-        for i, (pred, item) in tqdm(enumerate(zip(data['prediction'].tolist(), self.data.to_dict(orient='records')))):
-            if isinstance(pred, float) and np.isnan(pred):
-                pred = ""
-            if "</think>" in pred:
-                pred = pred.split("</think>")[1].strip()
-            else:
-                pred = pred.strip()
-            if "<point>" in pred:
-                pred = pred.replace("<point>", "")
-            if "</point>" in pred:
-                pred = pred.replace("</point>", "")
-            if item['category'] == "counting":
-                _count = item['count']
-            else:
-                _count = 1
-            
+        predictions = data['prediction'].tolist()
+        items = self.data.to_dict(orient='records')
+        
+        for pred, item in tqdm(zip(predictions, items), total=len(predictions)):
+            pred = self._preprocess_prediction(pred)
+            expected_count = item['count'] if item['category'] == "counting" else 1
             points = extract_coords(pred)
             
             mask = rle_decode(item['mask'])
-            height, width = mask.shape[0], mask.shape[1]
-            if all(0<= point[0] <= 1 and 0 <= point[1] <= 1 for point in points):
-                normed_points =  [(int(point[0] * width), int(point[1] * height)) for point in points]
-            else:    
-                normed_points = [(int(point[0] / 1000 * width), int(point[1] / 1000 * height)) for point in points]
+            height, width = mask.shape[:2]
+            normed_points = self._normalize_points(points, width, height)
             
-            def _check_in_mask(point, mask):
-                if len(point) != 2:
-                    return False
-                x, y = point
-                if x < 0 or x >= mask.shape[1] or y < 0 or y >= mask.shape[0]:
-                    return False
-                if mask[y, x] == 1:
-                    return True
-                else:
-                    return False    
-
-            point_list[i] = points
-            if len(points) != _count:
-                acc += 0
-                score_list[i] = 0
+            # 检查点数是否匹配
+            if len(points) != expected_count:
+                score_list.append(0)
+                point_list.append(points)
                 continue
-            if _count == 1 and len(points) == 1:
-                if _check_in_mask(points[0], mask):
-                    score_list[i] = 1
-                    acc += 1
-                    point_list[i] = points
-                elif _check_in_mask(normed_points[0], mask):
-                    score_list[i] = 1
-                    acc += 1
-                    point_list[i] = normed_points
-                else:
-                    score_list[i] = 0
-                    acc += 0
-
-            else:
-                _acc = 1
-                for point in points:
-                    if not _check_in_mask(point, mask):
-                        _acc = 0
-                        break
-                
-                if _acc == 0:
-                    for point in normed_points:
-                        if not _check_in_mask(point, mask):
-                            _acc = 0
-                            break
-                else:
-                    point_list[i] = points 
-
-                if _acc == 1:   
-                    point_list[i] = normed_points   
-                acc += _acc
-                score_list[i] = _acc
+            
+            # 检查所有点是否在 mask 内（优先使用原始坐标，其次使用归一化坐标）
+            score, valid_points = self._check_points_in_mask(points, normed_points, mask)
+            
+            score_list.append(score)
+            point_list.append([(p[0] / 1000, p[1] / 1000) for p in valid_points])
+            total_correct += score
         
+        # 保存结果
         data['score'] = score_list
         data['pred_points'] = point_list
         dump(data, storage)
-        acc = acc / len(data)
+        
+        accuracy = total_correct / len(data)
         score_pth = get_intermediate_file_path(eval_file, '_score', 'json')
-        acc = {'accuracy': acc}
-        dump(acc, score_pth)
-        return acc  
+        result = {'accuracy': accuracy}
+        dump(result, score_pth)
+        return result
+
+    @staticmethod
+    def _preprocess_prediction(pred):
+        """预处理预测文本：去除思考过程和标签"""
+        if isinstance(pred, float) and np.isnan(pred):
+            return ""
+        pred = str(pred)
+        if "</think>" in pred:
+            pred = pred.split("</think>")[1]
+        if "Final Answer" in pred:
+            pred = pred.split("Final Answer")[1].strip()
+        pred = pred.strip()
+        pred = pred.replace("<point>", "[").replace("</point>", "]")
+        # 处理 xml 格式 数据
+        return pred
+    
+    @staticmethod
+    def _normalize_points(points, width, height):
+        """将坐标归一化到图像尺寸"""
+        if not points:
+            return []
+        # 判断是 0-1 归一化还是 0-1000 归一化, 0-1000 归一化需要转换为 0-1 归一化
+        is_unit_normalized = all(0 <= p[0] <= 1 and 0 <= p[1] <= 1 for p in points)
+        if is_unit_normalized:
+            return [(int(p[0] * width), int(p[1] * height)) for p in points]
+        else:
+            return [(int(p[0] / 1000 * width), int(p[1] / 1000 * height)) for p in points]
+    
+    @staticmethod
+    def _is_point_in_mask(point, mask):
+        """检查单个点是否在 mask 区域内"""
+        if len(point) != 2:
+            return False
+        x, y = point
+        h, w = mask.shape[:2]
+        if not (0 <= x < w and 0 <= y < h):
+            return False
+        return mask[y, x] == 1
+    
+    def _check_points_in_mask(self, points, normed_points, mask):
+        """
+        检查所有点是否在 mask 内
+        优先检查原始坐标，若失败则检查归一化坐标
+        返回 (score, valid_points)
+        """
+        # 先检查原始坐标
+        # if all(self._is_point_in_mask(p, mask) for p in points):
+        #     height, width = mask.shape[:2]
+        #     normed_points = [(p[0] / width, p[1] / height) for p in points]
+        #     return 1, points
+        
+        # 再检查归一化坐标
+        if all(self._is_point_in_mask(p, mask) for p in normed_points):
+            return 1, points
+        
+        return 0, points
 
     def evaluate_in_mask_RefSpatial(self, eval_file, **judge_kwargs):
         data = load(eval_file)
-        
         
         acc_list = []
         point_list = [None] * len(data)
@@ -2764,7 +2773,7 @@ class CustomVQADataset(ImageBaseDataset):
         return results
     
     def evaluate(self, eval_file, **judge_kwargs):
-        if self.dataset_name in ["PointBench"]:
+        if "PointBench" in self.dataset_name:
             return self.evaluate_in_mask(eval_file, **judge_kwargs)
         elif self.dataset_name in ["RefSpatial"]:
             return self.evaluate_in_mask_RefSpatial(eval_file, **judge_kwargs)

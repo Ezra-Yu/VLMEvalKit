@@ -188,6 +188,34 @@ class MMMTBenchDataset(ImageMTDataset):
             for k, v in zip(indices, new_results):
                 assert k in ans
 
+        # 将每个 case 的打分保存到 eval_file 中
+        # 首先按照原始 line 的顺序组织分数
+        score_per_line = []
+        judgement_per_line = []
+        idx = 0
+        for line in lines:
+            predictions = eval(line['prediction'])
+            num_turns = len(predictions)
+            line_scores = []
+            line_judgements = []
+            for turn in range(num_turns):
+                if idx in ans:
+                    line_scores.append(ans[idx].get('score', -1))
+                    line_judgements.append(ans[idx].get('judgement', ''))
+                else:
+                    line_scores.append(-1)
+                    line_judgements.append('')
+                idx += 1
+            score_per_line.append(line_scores)
+            judgement_per_line.append(line_judgements)
+        
+        # 将分数添加到原始数据中
+        data['score'] = [s for s in score_per_line]
+        data['judge_responses'] = [str(j) for j in judgement_per_line]
+        
+        # 保存更新后的 eval_file
+        dump(data, eval_file)
+        
         # 计算聚合指标
         metrics = calculate_mm_mt_bench_metrics(ans)
         

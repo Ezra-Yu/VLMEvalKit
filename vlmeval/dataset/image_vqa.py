@@ -35,7 +35,7 @@ def extract_coords(pred_str):
     # 将提取出的字符串数字转换为整数
     return [[int(x), int(y)] for x, y in matches]
 
-def text2pts(text: str, width=640, height=480, is_absolute=False) -> np.ndarray:
+def text2pts(text: str, width=640, height=480, is_absolute=True) -> np.ndarray:
     if "[" in text and "]" in text:
         left_bracket = text.rindex("[")
         right_bracket = text.rindex("]")
@@ -2498,6 +2498,237 @@ class CustomVQADataset(ImageBaseDataset):
             return False
         return mask[y, x] == 1
     
+    def _parse_json_points_normed(self, text):
+        """
+        解析各种格式的点坐标输出，返回归一化坐标（0~1）
+        支持格式如:
+        - [{"point": [0.95, 0.10], "label": "xxx"}]
+        - {"point": [0.32, 0.48]} / {"coordinates": [x, y]} / {"point_coordinates": [x, y]}
+        - {"point": [293 451]} - 空格分隔
+        - {"point": "44 154"} - 字符串格式
+        - {"point": <point>151 675</point>} - point 标签格式
+        - {"point": {"x": 470, "y": 581}} / {"x": 0.82, "y": 0.12}
+        - <point>623 350</point> - 纯 point 标签
+        - `{"point": [782, 662]}` / **{"point": [153, 231]}**
+        
+        - 如果坐标在 0~1 之间，保持不变
+        - 如果坐标在 0~1000 范围，归一化到 0~1（除以 1000）
+        返回 np.ndarray 或 None（解析失败时）
+        """
+        import re
+        import json
+        
+        def normalize_point(x, y):
+            """归一化坐标：如果都在 0~1 之间保持不变，否则假设是 0~1000 范围"""
+            x, y = float(x), float(y)
+            if 0 <= x <= 1 and 0 <= y <= 1:
+                return (x, y)
+            else:
+                return (x / 1000.0, y / 1000.0)
+        
+        def parse_coord_value(val):
+            """解析坐标值，支持多种格式"""
+            if isinstance(val, (int, float)):
+                return float(val)
+            if isinstance(val, str):
+                # 尝试解析字符串中的数字
+                val = val.strip()
+                try:
+                    return float(val)
+                except ValueError:
+                    return None
+            return None
+        
+        def extract_from_point_tag(text_str):
+            """从 <point>x y</point> 格式提取坐标"""
+            pattern = r'<point>\s*([-+]?\d+\.?\d*)\s+([-+]?\d+\.?\d*)\s*</point>'
+            match = re.search(pattern, text_str)
+            if match:
+                return float(match.group(1)), float(match.group(2))
+            return None
+        
+        def extract_from_dict(d):
+            """从字典中提取坐标"""
+            points = []
+            
+            # 支持的键名
+            key_names = ['point', 'coordinates', 'point_coordinates']
+            
+            for key in key_names:
+                if key in d:
+                    val = d[key]
+                    pt = extract_point_from_value(val)
+                    if pt:
+                        points.append(pt)
+                        return points
+            
+            # 支持 {"box_2d": [x1, y1, x2, y2]} 格式，使用中心点
+            if 'box_2d' in d:
+                box = d['box_2d']
+                if isinstance(box, (list, tuple)) and len(box) == 4:
+                    try:
+                        x1, y1, x2, y2 = [float(v) for v in box]
+                        center_x = (x1 + x2) / 2
+                        center_y = (y1 + y2) / 2
+                        points.append(normalize_point(center_x, center_y))
+                        return points
+                    except (ValueError, TypeError):
+                        pass
+            
+            # 支持 {"x": x, "y": y} 格式
+            if 'x' in d and 'y' in d:
+                x = parse_coord_value(d['x'])
+                y = parse_coord_value(d['y'])
+                if x is not None and y is not None:
+                    points.append(normalize_point(x, y))
+            
+            return points
+        
+        def extract_point_from_value(val):
+            """从值中提取单个点坐标"""
+            # 如果是 [x, y] 数组
+            if isinstance(val, (list, tuple)) and len(val) == 2:
+                x = parse_coord_value(val[0])
+                y = parse_coord_value(val[1])
+                if x is not None and y is not None:
+                    return normalize_point(x, y)
+            
+            # 如果是 {"x": x, "y": y} 对象
+            if isinstance(val, dict):
+                if 'x' in val and 'y' in val:
+                    x = parse_coord_value(val['x'])
+                    y = parse_coord_value(val['y'])
+                    if x is not None and y is not None:
+                        return normalize_point(x, y)
+            
+            # 如果是字符串 "x y" 或 "<point>x y</point>"
+            if isinstance(val, str):
+                # 先尝试 <point> 标签
+                pt = extract_from_point_tag(val)
+                if pt:
+                    return normalize_point(pt[0], pt[1])
+                # 再尝试 "x y" 格式
+                parts = val.strip().split()
+                if len(parts) == 2:
+                    try:
+                        x, y = float(parts[0]), float(parts[1])
+                        return normalize_point(x, y)
+                    except ValueError:
+                        pass
+            
+            return None
+        
+        def extract_points_from_data(data):
+            """从解析后的 JSON 数据中提取点坐标"""
+            points = []
+            
+            # 如果是单个 dict
+            if isinstance(data, dict):
+                pts = extract_from_dict(data)
+                points.extend(pts)
+                return points
+            
+            if isinstance(data, list):
+                # 检查是否是简单的 [x, y] 格式（两个数字）
+                if len(data) == 2 and all(isinstance(x, (int, float)) for x in data):
+                    points.append(normalize_point(data[0], data[1]))
+                else:
+                    for item in data:
+                        if isinstance(item, dict):
+                            pts = extract_from_dict(item)
+                            points.extend(pts)
+                        elif isinstance(item, (list, tuple)) and len(item) == 2:
+                            if all(isinstance(x, (int, float)) for x in item):
+                                points.append(normalize_point(item[0], item[1]))
+            
+            return points
+        
+        def try_parse_json(json_str):
+            """尝试解析 JSON 字符串并提取点坐标"""
+            try:
+                data = json.loads(json_str)
+                return extract_points_from_data(data)
+            except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+                return []
+        
+        points = []
+        
+        # 方法1：尝试提取 markdown 代码块中的 JSON（在预处理之前）
+        json_pattern = r'```(?:json)?\s*([\s\S]*?)```'
+        matches = re.findall(json_pattern, text)
+        for match in matches:
+            json_str = match.strip()
+            pts = try_parse_json(json_str)
+            if pts:
+                points.extend(pts)
+        
+        if points:
+            return np.array(points)
+        
+        # 预处理文本：去掉反引号和 markdown bold（用于后续方法）
+        text_clean = text.replace('`', '').replace('**', '')
+        
+        # 预处理：将 <point>x y</point> 替换为 JSON 兼容格式，处理空格分隔的数组
+        # {"point": <point>151 675</point>} -> {"point": [151, 675]}
+        text_clean = re.sub(r'<point>\s*([-+]?\d+(?:\.\d*)?)\s+([-+]?\d+(?:\.\d*)?)\s*</point>', 
+                           r'[\1, \2]', text_clean)
+        # {"point": [293 451]} -> {"point": [293, 451]} (空格分隔转逗号分隔)
+        text_clean = re.sub(r'\[\s*([-+]?\d+(?:\.\d*)?)\s+([-+]?\d+(?:\.\d*)?)\s*\]', 
+                           r'[\1, \2]', text_clean)
+        
+        # 方法2：匹配 {"point"/"coordinates"/"point_coordinates": [x, y]} 格式（支持逗号或空格分隔）
+        coord_pattern = r'\{\s*"(?:point|coordinates|point_coordinates)"\s*:\s*\[\s*([-+]?\d+(?:\.\d*)?)\s*[,\s]\s*([-+]?\d+(?:\.\d*)?)\s*\]'
+        matches = re.findall(coord_pattern, text_clean)
+        for match in matches:
+            x, y = float(match[0]), float(match[1])
+            points.append(normalize_point(x, y))
+        
+        if points:
+            return np.array([points[-1]])
+        
+        # 方法3：匹配 {"x": x, "y": y} 格式
+        xy_pattern = r'\{\s*"x"\s*:\s*([-+]?\d+(?:\.\d+)?)\s*,\s*"y"\s*:\s*([-+]?\d+(?:\.\d+)?)\s*\}'
+        matches = re.findall(xy_pattern, text_clean)
+        for match in matches:
+            x, y = float(match[0]), float(match[1])
+            points.append(normalize_point(x, y))
+        
+        if points:
+            return np.array([points[-1]])
+        
+        # 方法4：匹配 {"point": {"x": x, "y": y}} 格式
+        nested_xy_pattern = r'"point"\s*:\s*\{\s*"x"\s*:\s*([-+]?\d+(?:\.\d+)?)\s*,\s*"y"\s*:\s*([-+]?\d+(?:\.\d+)?)\s*\}'
+        matches = re.findall(nested_xy_pattern, text_clean)
+        for match in matches:
+            x, y = float(match[0]), float(match[1])
+            points.append(normalize_point(x, y))
+        
+        if points:
+            return np.array([points[-1]])
+        
+        # 方法5：匹配 {"point": "x y"} 字符串格式
+        str_point_pattern = r'"(?:point|coordinates)"\s*:\s*"([-+]?\d+(?:\.\d+)?)\s+([-+]?\d+(?:\.\d+)?)"'
+        matches = re.findall(str_point_pattern, text_clean)
+        for match in matches:
+            x, y = float(match[0]), float(match[1])
+            points.append(normalize_point(x, y))
+        
+        if points:
+            return np.array([points[-1]])
+        
+        # 方法6：匹配纯 <point>x y</point> 格式（已被预处理为 [x, y]）
+        # 以及简单的 [x, y] 或 [x y] 格式
+        simple_array_pattern = r'\[\s*([-+]?\d+(?:\.\d*)?)\s*[,\s]\s*([-+]?\d+(?:\.\d*)?)\s*\]'
+        matches = re.findall(simple_array_pattern, text_clean)
+        if matches:
+            x, y = float(matches[-1][0]), float(matches[-1][1])
+            points.append(normalize_point(x, y))
+        
+        if points:
+            return np.array(points)
+        
+        return None
+
     def _check_points_in_mask(self, points, normed_points, mask):
         """
         检查所有点是否在 mask 内
@@ -2529,7 +2760,34 @@ class CustomVQADataset(ImageBaseDataset):
             
             mask = rle_decode_mask(item['mask'])
             width, height = mask.shape[1], mask.shape[0]
-            points = text2pts(pred, width, height)
+            
+            # 尝试解析 JSON 格式的输出，提取 normed points
+            normed_points = self._parse_json_points_normed(pred)
+            if normed_points is None:
+                # 如果 JSON 解析失败，回退到原来的 text2pts 逻辑提取原始坐标
+                raw_points = text2pts(pred, width, height, is_absolute=True)
+                if len(raw_points) > 0:
+                    # 将原始坐标归一化：如果都在 0~1 之间则不处理，否则假设是 0~1000 范围需要 /1000
+                    normed_points = []
+                    for x, y in raw_points:
+                        if 0 <= x <= 1 and 0 <= y <= 1:
+                            normed_points.append((x, y))
+                        else:
+                            # 假设是 0~1000 范围，归一化到 0~1
+                            normed_points.append((x / 1000.0, y / 1000.0))
+                    normed_points = np.array(normed_points)
+                else:
+                    normed_points = np.array([])
+            
+            # 将归一化坐标转换为像素坐标用于 mask 检查
+            if len(normed_points) > 0:
+                if os.environ.get('IS_GEMINI_API', '0') == '1':
+                    # Gemini 输出的坐标格式是 (y, x)，需要交换为 (x, y)
+                    points = np.array([[int(y * width), int(x * height)] for x, y in normed_points])
+                else:
+                    points = np.array([[int(x * width), int(y * height)] for x, y in normed_points])
+            else:
+                points = np.array([])
 
             acc = 0.0
             if len(points) > 0:
@@ -2540,7 +2798,10 @@ class CustomVQADataset(ImageBaseDataset):
                     np.zeros(points.shape[0] - in_range.sum())
                 ]).mean()
             acc_list.append(acc)
-            point_list[i] = [f"({point[0]}, {point[1]})" for point in points]
+            if os.environ.get('IS_GEMINI_API', '0') == '1':
+                point_list[i] = [f"({point[1]}, {point[0]})" for point in normed_points]
+            else:
+                point_list[i] = [f"({point[0]}, {point[1]})" for point in normed_points]
 
         data['score'] = acc_list
         data['pred_points'] = point_list
@@ -2775,9 +3036,9 @@ class CustomVQADataset(ImageBaseDataset):
     def evaluate(self, eval_file, **judge_kwargs):
         if "PointBench" in self.dataset_name:
             return self.evaluate_in_mask(eval_file, **judge_kwargs)
-        elif self.dataset_name in ["RefSpatial"]:
+        elif "RefSpatial" in self.dataset_name:
             return self.evaluate_in_mask_RefSpatial(eval_file, **judge_kwargs)
-        elif self.dataset_name in ["GeoBench"]:
+        elif  "GeoBench" in self.dataset_name:
             return self.evaluate_GeoBench(eval_file, **judge_kwargs)
         else:
             return self.evaluate_xverify(eval_file, **judge_kwargs)

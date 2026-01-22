@@ -27,6 +27,7 @@ def build_judge(**kwargs):
             'deepseek': 'deepseek-ai/DeepSeek-V3',
             'xhs-deepseek': 'DeepSeek-V3',
             "gptoss-120b" : "gptoss-120b",
+            "stepvl" : "stepvl",
             'llama31-8b': 'meta-llama/Llama-3.1-8B-Instruct',
         }
         model_version = model_map[model] if model in model_map else model
@@ -87,6 +88,24 @@ def build_judge(**kwargs):
             timeout = 180,
             key=key,
             reasoning_effort = "high",
+            wait = 10,
+            **kwargs)
+    elif model == 'stepvl':
+        print("Using StepVL from local platform......")
+        api_base = os.environ.get('STEPVL_API_BASE', None)
+        key = os.environ.get('STEPVL_KEY', None)
+        assert api_base is not None, (
+            "Please set `STEPVL_API_BASE` in '$VLMEVALKIT/.env'")
+        if "," in api_base:
+            api_base = api_base.split(",")
+            for api in api_base:
+                assert api.startswith('http'), (
+                    "Please set `STEPVL_API_BASE` in '$VLMEVALKIT/.env'")
+        model = XHSVLMAPIWrapper(
+            'stepfun-ai/Step3-VL-10B', 
+            api_base=api_base,
+            timeout = 180,
+            key=key,
             wait = 10,
             **kwargs)
     elif model == 'chatgpt-0125':

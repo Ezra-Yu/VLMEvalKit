@@ -110,7 +110,7 @@ class ChartMuseum(ImageBaseDataset):
     }
     DATASET_MD5 = {
         "ChartMuseum_dev": "05dbce1f4bd5e5ba0e4b0d606efb707e",
-        "ChartMuseum_test": "983586eace6ee33cdb189d63124768c8",
+        "ChartMuseum_test": "3c139cb8158514ef44a7dba50c882a87",
     }
 
     def build_prompt(self, line: Union[int, pd.Series]) -> List[Dict[str, str]]:

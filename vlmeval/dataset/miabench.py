@@ -1,5 +1,6 @@
 import json
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pandas as pd
 
@@ -117,6 +118,7 @@ class MIABench(ImageBaseDataset):
             judge_name = judge_kwargs.pop('model', 'gpt-4o')
         else:
             judge_name = judge_kwargs.pop('judge_name', 'gpt-4o')
+        judge_name, nproc = 'stepvl', 10
 
         model = build_judge(model=judge_name, **judge_kwargs)
 
@@ -151,15 +153,23 @@ class MIABench(ImageBaseDataset):
             job_keys = list(jobs.keys())
             job_vals = [jobs[k] for k in job_keys]
 
-            resps = track_progress_rich(
-                model.generate,
-                job_vals,
-                nproc=nproc,
-                chunksize=nproc,
-                keys=job_keys,
-                save=tmp_file,
-                max_tokens=2000
-            )
+            if nproc == 1:
+                resps = []
+                for k, v in zip(job_keys, job_vals):
+                    resp = model.generate(**v, max_tokens=12000)
+                    resps.append(resp)
+                    res[k] = resp
+                    dump(res, tmp_file)
+            else:
+                resps = track_progress_rich(
+                    model.generate,
+                    job_vals,
+                    nproc=nproc,
+                    chunksize=nproc,
+                    keys=job_keys,
+                    save=tmp_file,
+                    max_tokens=12000
+                )
             for k, resp in zip(job_keys, resps):
                 res[k] = resp
             data['score_raw'] = [res[idx] for idx in indices]
@@ -170,7 +180,7 @@ class MIABench(ImageBaseDataset):
         if data is None:
             data = load(eval_file)
         data['score'] = score_list
-        dump(data, eval_file)
+        dump(data, storage)
 
         result_pth = get_intermediate_file_path(storage, '_score', 'csv')
         results_pd = pd.DataFrame.from_dict(list(results.items()))

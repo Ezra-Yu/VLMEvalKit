@@ -26,22 +26,28 @@ def get_score(judgement: str) -> float:
     return rating
 
 
-def build_judge_prompt(questions: list, ref_answer: str, model_answer: str) -> str:
+def build_judge_prompt(questions: list, ref_answers: list, model_answer: str) -> str:
     """
     构建 judge prompt
     
+    参考 mistral-evals 的 _replay_conversation 和 _get_judge_prompt:
+    - 每个 User 问题后面紧跟对应的 Reference answer
+    - 所有问答对都拼完后，最后加上 Assistant's answer
+    
     Args:
-        questions: 用户问题列表
-        ref_answer: 参考答案
-        model_answer: 模型最后一个回答
+        questions: 用户问题列表 (到当前轮为止的所有问题)
+        ref_answers: 参考答案列表 (到当前轮为止的所有参考答案，与 questions 一一对应)
+        model_answer: 模型对最后一个问题的回答
     """
+    assert len(questions) == len(ref_answers), f"questions({len(questions)}) and ref_answers({len(ref_answers)}) must have same length"
+    
     prompt = "<|The Start of Conversation with User|>\n\n"
     
-    for q in questions:
-        prompt += f"### User:\n{q}\n"
-
-    prompt += f"### Reference answer:\n{ref_answer}\n\n"
+    # 按顺序交替拼接：User -> Reference answer -> User -> Reference answer ...
+    for q, a in zip(questions, ref_answers):
+        prompt += f"### User:\n{q}\n\n### Reference answer:\n{a}\n\n"
     
+    # 最后加上 Assistant's answer
     prompt += f"\n\n### Assistant's answer:\n{model_answer}\n\n"
     prompt += "<|The End of Conversation with User|>\n\n"
     
@@ -79,7 +85,9 @@ def mm_mt_bench_score(model, line, turn_idx):
     gt_answers = eval(line['answer']) if isinstance(line['answer'], str) else line['answer']
     
 
-    ref_answer = gt_answers[turn_idx]
+    # 取到当前轮为止的所有问题和参考答案
+    questions_up_to_now = questions[:turn_idx + 1]
+    ref_answers_up_to_now = gt_answers[:turn_idx + 1]
     prediction = line['pred']  # 当前轮的模型回答
     
     category = line.get('category', 'unknown')
@@ -87,10 +95,10 @@ def mm_mt_bench_score(model, line, turn_idx):
     
     try:
         # 构建 judge prompt
-        # questions 和 gt_answers 包含到当前轮为止的所有对话
+        # 传入到当前轮为止的所有问题和参考答案，以及模型对当前轮的回答
         judge_prompt = build_judge_prompt(
-            questions, 
-            ref_answer,
+            questions_up_to_now, 
+            ref_answers_up_to_now,
             prediction
         )
         
@@ -121,6 +129,9 @@ def mm_mt_bench_score(model, line, turn_idx):
         score=score,
         category=category,
         turn=turn,
+        prediction=prediction,
+        reference=ref_answers_up_to_now[-1],  # 当前轮的参考答案
+        judge_prompt=judge_prompt,
         judgement=response,
         log=log
     )

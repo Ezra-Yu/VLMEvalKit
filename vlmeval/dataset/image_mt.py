@@ -157,16 +157,17 @@ class MMMTBenchDataset(ImageMTDataset):
         lines = [data.iloc[i] for i in range(lt)]
         # tups = [(judge_model, line) for line in lines]
         # indices = [line['index'] for line in lines]
+        from copy import deepcopy
         tups, indices = [], []
         index = 0
         for line in lines:
             predictions = eval(line['prediction'])
             for i, prediction in enumerate(predictions):
-                line['pred'] = prediction
-                tups.append((judge_model, line, i))
+                line_copy = deepcopy(line)
+                line_copy['pred'] = prediction
+                tups.append((judge_model, line_copy, i))
                 indices.append(index)
                 index += 1
-        
         ans = {}
         if osp.exists(tmp_file):
             ans = load(tmp_file)
@@ -192,27 +193,37 @@ class MMMTBenchDataset(ImageMTDataset):
         # 首先按照原始 line 的顺序组织分数
         score_per_line = []
         judgement_per_line = []
+        ref_per_line = []
+        judge_prompt_per_line = []
         idx = 0
         for line in lines:
             predictions = eval(line['prediction'])
             num_turns = len(predictions)
             line_scores = []
             line_judgements = []
+            line_refs = []
+            line_judge_prompts = []
             for turn in range(num_turns):
                 if idx in ans:
                     line_scores.append(ans[idx].get('score', -1))
                     line_judgements.append(ans[idx].get('judgement', ''))
+                    line_refs.append(ans[idx].get('reference', ''))
+                    line_judge_prompts.append(ans[idx].get('judge_prompt', ''))
                 else:
                     line_scores.append(-1)
                     line_judgements.append('')
+                    line_refs.append('')
+                    line_judge_prompts.append('')
                 idx += 1
             score_per_line.append(line_scores)
             judgement_per_line.append(line_judgements)
-        
+            ref_per_line.append(line_refs)
+            judge_prompt_per_line.append(line_judge_prompts)
         # 将分数添加到原始数据中
         data['score'] = [s for s in score_per_line]
         data['judge_responses'] = [str(j) for j in judgement_per_line]
-        
+        data['references'] = [str(r) for r in ref_per_line]
+        data['judge_prompts'] = [str(p) for p in judge_prompt_per_line]
         # 保存更新后的 eval_file
         dump(data, eval_file)
         

@@ -2436,8 +2436,8 @@ class CustomVQADataset(ImageBaseDataset):
             height, width = mask.shape[:2]
             normed_points = self._normalize_points(points, width, height)
             
-            # 检查点数是否匹配
-            if len(points) != expected_count:
+            # 检查点数是否匹配, 只在counting时在加这个判断
+            if item['category'] == "counting" and len(points) != expected_count:
                 score_list.append(0)
                 point_list.append(points)
                 continue
@@ -3834,48 +3834,183 @@ class TDBenchGrounding(ImageVQADataset):
         return msgs
 
 
+ZEROBENCH_COMPARE_PROMPT = """You are provided with a question and two answers. Please determine if these answers are equivalent. Follow these guidelines:
+
+1. Numerical Comparison:
+   - For decimal numbers, consider them as equivalent if their relative difference is sufficiently small.
+   For example, the following pairs are equivalent:
+    - 32.35 and 32.34
+    - 90.05 and 90.00
+    - 83.3% and 83.2%
+    - 0.31 and 31%
+   The following pairs are not equivalent:
+   - 32.35 and 35.25
+   - 90.05 and 91.05
+   - 83.3% and 45.2%
+
+   Note that if the question asks for years or dates, please do the exact match with no error tolerance.
+
+2. Unit Handling:
+   - If only one answer includes units (e.g. '$', '%', '-', etc.), ignore the units and compare only the numerical values
+   For example, the following pairs are equivalent:
+   - 305 million and 305 million square meters
+   - 0.75 and 0.75%
+   - 0.6 and 60%
+   - $80 and 80
+   The following pairs are not equivalent:
+   - 305 million and 200 million square meters
+   - 0.75 and 0.90%
+
+3. Text Comparison:
+   - Ignore differences in capitalization
+   - Treat mathematical expressions in different but equivalent forms as the same (e.g., "2+3" = "5")
+
+Question: [QUESTION]
+Answer 1 (Ground Truth): [ANSWER1]
+Answer 2 (Model Prediction): [ANSWER2]
+
+Please respond with:
+- "Yes" if the answers are equivalent
+- "No" if the answers are different"""
+
+
+def zerobench_extract_answer(text: str) -> str:
+    """Extract answer from curly braces in model prediction."""
+    text = text.strip()
+    try:
+        pattern = r"\{(.*?)\}"
+        parsed_answer = re.findall(pattern, text)[-1]
+        return parsed_answer.strip()
+    except IndexError:
+        return text
+
+
+def _is_numeric(s: str) -> bool:
+    """Check if a string represents a numeric value."""
+    s = s.strip()
+    try:
+        float(s)
+        return True
+    except ValueError:
+        return False
+
+
+def _normalize_number(s: str) -> float:
+    """Normalize a numeric string to float for comparison."""
+    s = s.strip()
+    return float(s)
+
+
+def zerobench_gpt_compare(question, answer1, answer2, idx, judge_model):
+    """Compare two answers using a judge model.
+    
+    For numeric answers, exact match is required.
+    For non-numeric answers, use GPT judge for semantic comparison.
+    """
+    # 如果是数学问题/数字答案，需要精确匹配
+    if _is_numeric(answer1) and _is_numeric(answer2):
+        num1 = _normalize_number(answer1)
+        num2 = _normalize_number(answer2)
+        if num1 == num2:
+            return "Yes"
+        else:
+            return "No"
+    
+    # 非数字答案，使用 GPT judge 进行语义比较
+    prompt = (
+        ZEROBENCH_COMPARE_PROMPT
+        .replace("[QUESTION]", question)
+        .replace("[ANSWER1]", answer1)
+        .replace("[ANSWER2]", answer2)
+    )
+    response = judge_model.generate(prompt)
+    return response
+
 class ZEROBench(ImageVQADataset):
     DATASET_URL = {'ZEROBench': 'https://opencompass.openxlab.space/utils/VLMEval/zerobench.tsv',
                    'ZEROBench_sub': 'https://opencompass.openxlab.space/utils/VLMEval/zerobench_sub.tsv'}
     DATASET_MD5 = {'ZEROBench': '600d5e89325f1dab5ad3fa2ea200cea6',
-                   'ZEROBench_sub': '2d2131bffb7f09ca099fdd0f3ad0392b'}
+                   'ZEROBench_sub': '2d2131bffb7f09ca099fdd0f3ad0392b',
+                   'ZEROBench_V2': '8ed8bd2aee65f57270f1567b876e3057',
+                   'ZEROBench_sub_V2': 'b79ce10268ed49dc87ab8d71814d055a'}
 
     def evaluate(self, eval_file, **judge_kwargs):
         data = load(eval_file).sort_values(by='index')
         predictions = [str(x) for x in data['prediction']]
-        answers = [str(x) for x in data['answers']]
-        indexes = [str(x) for x in data['index']]
-        output_df = pd.DataFrame(columns=["Question_ID", "Ground_Truth", "Model_Output", "Correct?"])
+        answers = [str(x) for x in data['answer']]
+        questions = [str(x) for x in data['question']]
+        indexes = [int(x) for x in data['index']]
+
+        # Extract answers from curly braces
+        pred_answers = [zerobench_extract_answer(p) for p in predictions]
+
+        # Setup judge model
+        if 'judge_model' in judge_kwargs:
+            judge_model_name = judge_kwargs.pop('judge_model')
+        else:
+            judge_model_name = judge_kwargs.pop('model', 'gptoss-120b')
+        nproc = judge_kwargs.pop('nproc', 4)
+
+        # Setup intermediate file for caching
+        tmp_file = get_intermediate_file_path(eval_file, f'_{judge_model_name}', 'pkl')
+        if osp.exists(tmp_file):
+            already_judged = load(tmp_file)
+        else:
+            already_judged = {}
+
+        # Build judge model
+        judge_model = build_judge(model=judge_model_name, **judge_kwargs)
+
+        # Prepare input tuples for parallel evaluation
+        input_tuples = [
+            (q, gt, pa, idx, judge_model)
+            for q, gt, pa, idx in zip(questions, answers, pred_answers, indexes)
+            if idx not in already_judged
+        ]
+        indices = [idx for _, _, _, idx, _ in input_tuples]
+
+        # Run parallel evaluation
+        if len(indices):
+            _ = track_progress_rich(
+                zerobench_gpt_compare,
+                input_tuples,
+                nproc=nproc,
+                chunksize=nproc,
+                keys=indices,
+                save=tmp_file,
+            )
+
+        # Load results
+        ans = load(tmp_file)
         score_list = [None] * len(data)
-        for idx, (pred, ans, index) in enumerate(zip(predictions, answers, indexes)):
-            formatted_response = pred.strip()
-            # convert to lowercase
-            formatted_response = formatted_response.lower()
-            # try to extract final answer from curly braces
-            parsed_answer = ''
-            try:
-                pattern = r"\{(.*?)\}"
-                parsed_answer = re.findall(pattern, formatted_response)[-1]
-            except IndexError:
-                pass
+        output_df = pd.DataFrame(columns=["Question_ID", "Ground_Truth", "Model_Output", "Correct?"])
 
-            # evaluate via exact matching
-            correct = ans.strip().lower() in parsed_answer.lower()
-            score_list[idx] = int(correct)
-            # store results
-            results_row = {"Question_ID": idx,
-                           "Ground_Truth": ans,
-                           "Model_Output": pred,
-                           "Correct?": correct}
-            output_df = pd.concat([output_df, pd.DataFrame([results_row])],
-                                  ignore_index=True)
+        for key, value in ans.items():
+            # Find the position in the data by index
+            pos = indexes.index(key)
+            flag = 'yes' in value.lower()
+            score_list[pos] = int(flag)
 
-        # compute accuracy
-        accuracy = output_df["Correct?"].mean()
+            results_row = {
+                "Question_ID": key,
+                "Ground_Truth": answers[pos],
+                "Model_Output": predictions[pos],
+                "Correct?": flag
+            }
+            output_df = pd.concat([output_df, pd.DataFrame([results_row])], ignore_index=True)
+
+        # Compute accuracy
+        accuracy = sum(s for s in score_list if s is not None) / len([s for s in score_list if s is not None])
         data['score'] = score_list
         dump(data, eval_file)
+
         result_file = eval_file.replace(f".{eval_file.split('.')[-1]}", "_acc.json")
-        dump( {'accuracy': accuracy}, result_file )
+        dump({'accuracy': accuracy}, result_file)
+
+        # Save detailed results
+        score_file = get_intermediate_file_path(eval_file, "_detailed", "csv")
+        dump(output_df, score_file)
+
         return {"accuracy": accuracy}
 
     def build_prompt(self, line):

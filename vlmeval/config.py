@@ -1064,7 +1064,7 @@ api_models = {
         GPT4V, model="gemini-2.5-pro", temperature=0, retry=5, timeout=180, max_tokens=32768
     ),
     "Gemini3-32k": partial(
-        GPT4V, model="gemini-3", temperature=0.7, retry=500, timeout=600, max_tokens=32768
+        GPT4V, model="gemini-3", temperature=0.7, retry=50, timeout=600, max_tokens=32768
     ),
     "minimal": partial(
         GPT4V, model="gemini-3", temperature=0.7, retry=50, timeout=600, max_tokens=32768, thinking_level="minimal"

@@ -418,7 +418,7 @@ def compress_image(base64_str, quality=85, format='JPEG'):
         img = bg
 
     # 检查图像尺寸
-    max_size = 36000000  # doubao的最大宽高乘积
+    max_size = 3600000  # doubao的最大宽高乘积
     if img.size[0] * img.size[1] > max_size:
         ratio = (max_size / (img.size[0] * img.size[1])) ** 0.5
         new_width = int(img.size[0] * ratio)

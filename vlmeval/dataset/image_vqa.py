@@ -2436,8 +2436,8 @@ class CustomVQADataset(ImageBaseDataset):
             height, width = mask.shape[:2]
             normed_points = self._normalize_points(points, width, height)
             
-            # 检查点数是否匹配
-            if len(points) != expected_count:
+            # 检查点数是否匹配, 只在counting时在加这个判断
+            if item['category'] == "counting" and len(points) != expected_count:
                 score_list.append(0)
                 point_list.append(points)
                 continue

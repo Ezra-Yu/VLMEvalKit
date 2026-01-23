@@ -3928,7 +3928,9 @@ def zerobench_gpt_compare(question, answer1, answer2, idx, judge_model):
 
 class ZEROBench(ImageVQADataset):
     DATASET_URL = {'ZEROBench': 'https://opencompass.openxlab.space/utils/VLMEval/zerobench.tsv',
-                   'ZEROBench_sub': 'https://opencompass.openxlab.space/utils/VLMEval/zerobench_sub.tsv'}
+                   'ZEROBench_sub': 'https://opencompass.openxlab.space/utils/VLMEval/zerobench_sub.tsv',
+                   'ZEROBench_V2': 'https://opencompass.openxlab.space/utils/VLMEval/zerobench_V2.tsv',
+                   'ZEROBench_sub_V2': 'https://opencompass.openxlab.space/utils/VLMEval/zerobench_sub_V2.tsv'}
     DATASET_MD5 = {'ZEROBench': '600d5e89325f1dab5ad3fa2ea200cea6',
                    'ZEROBench_sub': '2d2131bffb7f09ca099fdd0f3ad0392b',
                    'ZEROBench_V2': '8ed8bd2aee65f57270f1567b876e3057',

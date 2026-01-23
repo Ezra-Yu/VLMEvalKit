@@ -309,6 +309,12 @@ def main():
         for _, dataset_name in enumerate(args.data):
             if WORLD_SIZE > 1:
                 dist.barrier()
+            
+            if dataset_name.startswith("ZEROBench") and "V2" not in dataset_name:
+                if dataset_name.startswith("ZEROBench_sub"):
+                    dataset_name = dataset_name.replace("ZEROBench_sub", "ZEROBench_sub_V2")
+                else:
+                    dataset_name = dataset_name.replace("ZEROBench", "ZEROBench_V2")
 
             try:
                 pred_format = get_pred_file_format()

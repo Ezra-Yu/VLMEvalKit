@@ -3885,8 +3885,38 @@ def zerobench_extract_answer(text: str) -> str:
         return text
 
 
+def _is_numeric(s: str) -> bool:
+    """Check if a string represents a numeric value."""
+    s = s.strip()
+    try:
+        float(s)
+        return True
+    except ValueError:
+        return False
+
+
+def _normalize_number(s: str) -> float:
+    """Normalize a numeric string to float for comparison."""
+    s = s.strip()
+    return float(s)
+
+
 def zerobench_gpt_compare(question, answer1, answer2, idx, judge_model):
-    """Compare two answers using a judge model."""
+    """Compare two answers using a judge model.
+    
+    For numeric answers, exact match is required.
+    For non-numeric answers, use GPT judge for semantic comparison.
+    """
+    # 如果是数学问题/数字答案，需要精确匹配
+    if _is_numeric(answer1) and _is_numeric(answer2):
+        num1 = _normalize_number(answer1)
+        num2 = _normalize_number(answer2)
+        if num1 == num2:
+            return "Yes"
+        else:
+            return "No"
+    
+    # 非数字答案，使用 GPT judge 进行语义比较
     prompt = (
         ZEROBENCH_COMPARE_PROMPT
         .replace("[QUESTION]", question)
@@ -3899,8 +3929,10 @@ def zerobench_gpt_compare(question, answer1, answer2, idx, judge_model):
 class ZEROBench(ImageVQADataset):
     DATASET_URL = {'ZEROBench': 'https://opencompass.openxlab.space/utils/VLMEval/zerobench.tsv',
                    'ZEROBench_sub': 'https://opencompass.openxlab.space/utils/VLMEval/zerobench_sub.tsv'}
-    DATASET_MD5 = {'ZEROBench': '8ed8bd2aee65f57270f1567b876e3057',
-                   'ZEROBench_sub': 'b79ce10268ed49dc87ab8d71814d055a'}
+    DATASET_MD5 = {'ZEROBench': '600d5e89325f1dab5ad3fa2ea200cea6',
+                   'ZEROBench_sub': '2d2131bffb7f09ca099fdd0f3ad0392b',
+                   'ZEROBench_V2': '8ed8bd2aee65f57270f1567b876e3057',
+                   'ZEROBench_sub_V2': 'b79ce10268ed49dc87ab8d71814d055a'}
 
     def evaluate(self, eval_file, **judge_kwargs):
         data = load(eval_file).sort_values(by='index')

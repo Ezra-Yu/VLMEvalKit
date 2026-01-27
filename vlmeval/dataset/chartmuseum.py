@@ -106,7 +106,7 @@ class ChartMuseum(ImageBaseDataset):
     TYPE = "VQA"
     DATASET_URL = {
         "ChartMuseum_dev": "https://huggingface.co/datasets/yujieouo/ChartMuseum/blob/main/ChartMuseum_dev.tsv",
-        "ChartMuseum_test": "https://huggingface.co/datasets/yujieouo/ChartMuseum/blob/main/ChartMuseum_test.tsv",
+        "ChartMuseum_test": "https://huggingface.co/datasets/yujieouo/ChartMuseum/resolve/main/ChartMuseum_test.tsv",
     }
     DATASET_MD5 = {
         "ChartMuseum_dev": "05dbce1f4bd5e5ba0e4b0d606efb707e",

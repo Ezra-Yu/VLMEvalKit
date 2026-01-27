@@ -449,7 +449,7 @@ def main():
                         judge_kwargs['model'] = 'gpt-4o'
                     elif listinstr(['CharXiv_reasoning_val'], dataset_name):
                         judge_kwargs['model'] = 'xhs-deepseek' 
-                    elif listinstr(['ChartMuseum', 'MMLongBench'], dataset_name):
+                    elif listinstr(['ChartMuseum', 'MMLongBench', "WorldVQA"], dataset_name):
                         judge_kwargs['model'] = 'gptoss-120b'
                     elif listinstr(['MMLongBench', 'MathVista', 'MathVerse', 'MathVision', 'DynaMath', 'VL-RewardBench', 'LogicVista', 'MOAT', 'OCR_Reasoning', 'CharXiv_descriptive_val'], dataset_name):  # noqa: E501
                         judge_kwargs['model'] = 'gpt-4o-mini'

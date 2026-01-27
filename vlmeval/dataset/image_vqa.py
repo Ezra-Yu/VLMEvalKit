@@ -2414,6 +2414,115 @@ class CustomVQADataset(ImageBaseDataset):
         dump(acc, score_pth)
         return acc       
 
+    def evaluate_WorldVQA(self, eval_file, **judge_kwargs):
+        """Evaluate WorldVQA dataset using GPT-based judge with parallel processing.
+        
+        Reference: https://github.com/MoonshotAI/WorldVQA/blob/master/eval/eval.py
+        """
+        from .gptoss_utils import worldvqa_judge_single, worldvqa_calculate_scores
+
+        # Setup judge model
+        if 'judge_model' in judge_kwargs:
+            model_name = judge_kwargs.pop('judge_model')
+        else:
+            model_name = judge_kwargs.pop('model', 'gptoss-120b')
+        nproc = judge_kwargs.pop('nproc', 4)
+        
+        suffix = eval_file.split('.')[-1]
+        storage = eval_file.replace(f'.{suffix}', f'_{model_name}.xlsx')
+        score_pth = storage.replace('.xlsx', '_score.json')
+        tmp_file = get_intermediate_file_path(eval_file, f'_{model_name}', 'pkl')
+        
+        # Check if already evaluated
+        if os.path.exists(score_pth):
+            return load(score_pth)
+        
+        if os.path.exists(storage):
+            data = load(storage)
+            if 'judge_result' in data.columns:
+                results = data.to_dict('records')
+                scores = worldvqa_calculate_scores(results)
+                dump(scores, score_pth)
+                return scores
+        
+        data = load(eval_file)
+        
+        predictions = data['prediction'].tolist()
+        # Remove thinking process if present
+        predictions = [
+            x.split("</think>")[1].strip() if not isinstance(x, float) and "</think>" in x else x 
+            for x in predictions
+        ]
+        # Handle NaN predictions
+        predictions = [
+            "" if isinstance(x, float) and np.isnan(x) else str(x)
+            for x in predictions
+        ]
+        answers = [str(x) for x in data['answer'].tolist()]
+        questions = [str(x) for x in data['question'].tolist()]
+        indexes = list(range(len(data)))
+        
+        # Load cached results if exists
+        if osp.exists(tmp_file):
+            already_judged = load(tmp_file)
+        else:
+            already_judged = {}
+        
+        # Build judge model
+        judge_model = build_judge(model=model_name, max_tokens=8192, **judge_kwargs)
+        assert judge_model.working(), 'WorldVQA evaluation requires a working OPENAI API\n' + DEBUG_MESSAGE
+        
+        # Prepare input tuples for parallel evaluation
+        input_tuples = [
+            (q, ans, pred, idx, judge_model)
+            for q, ans, pred, idx in zip(questions, answers, predictions, indexes)
+            if idx not in already_judged
+        ]
+        indices = [idx for _, _, _, idx, _ in input_tuples]
+        
+        # Run parallel evaluation
+        if len(indices):
+            _ = track_progress_rich(
+                worldvqa_judge_single,
+                input_tuples,
+                nproc=nproc,
+                chunksize=nproc,
+                keys=indices,
+                save=tmp_file,
+            )
+        
+        # Load all results
+        ans = load(tmp_file)
+        
+        judge_results = [None] * len(data)
+        answer_categories = [None] * len(data)
+        judge_reasons = [None] * len(data)
+        
+        for idx, result in ans.items():
+            judge_results[idx] = result.get("judge_result")
+            answer_categories[idx] = result.get("answer_category")
+            judge_reasons[idx] = result.get("judge_reason")
+        
+        data['judge_result'] = judge_results
+        data['answer_category'] = answer_categories
+        data['judge_reason'] = judge_reasons
+        
+        dump(data, storage)
+        
+        # Calculate scores
+        results = []
+        for idx, row in data.iterrows():
+            results.append({
+                "judge_result": row.get("judge_result"),
+                "answer_category": row.get("answer_category"),
+                "difficulty": row.get("difficulty"),
+                "category": row.get("category"),
+            })
+        
+        scores = worldvqa_calculate_scores(results)
+        dump(scores, score_pth)
+        return scores
+
     def evaluate_in_mask(self, eval_file, **judge_kwargs):
         """评估预测的点是否在 mask 区域内"""
         suffix = eval_file.split('.')[-1]
@@ -3038,8 +3147,10 @@ class CustomVQADataset(ImageBaseDataset):
             return self.evaluate_in_mask(eval_file, **judge_kwargs)
         elif "RefSpatial" in self.dataset_name:
             return self.evaluate_in_mask_RefSpatial(eval_file, **judge_kwargs)
-        elif  "GeoBench" in self.dataset_name:
+        elif "GeoBench" in self.dataset_name:
             return self.evaluate_GeoBench(eval_file, **judge_kwargs)
+        elif "WorldVQA" in self.dataset_name:
+            return self.evaluate_WorldVQA(eval_file, **judge_kwargs)
         else:
             return self.evaluate_xverify(eval_file, **judge_kwargs)
 

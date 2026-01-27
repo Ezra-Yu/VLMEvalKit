@@ -38,7 +38,7 @@ timm
 torch
 torchvision
 tqdm
-transformers>=4.55.3
+transformers>=4.55.3,<5.0.0
 soxr
 typing_extensions
 validators

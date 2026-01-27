@@ -110,8 +110,24 @@ class ChartMuseum(ImageBaseDataset):
     }
     DATASET_MD5 = {
         "ChartMuseum_dev": "05dbce1f4bd5e5ba0e4b0d606efb707e",
-        "ChartMuseum_test": "3c139cb8158514ef44a7dba50c882a87",
+        "ChartMuseum_test": "983586eace6ee33cdb189d63124768c8",
     }
+
+    def _fix_gts(self, gts: List[str]) -> List[str]:
+        gts[11] = "United States" # "United States" <- "United Atates"
+        gts[32] = 'Dearth--survival' # 'Dearth--survival' <- 'Death--survival'
+        gts[51] = 'Latin America & the Caribbean' # 'Latin America & the Caribbean' <- 'Latin America & the Carribean'
+        gts[650] = 'Latin America & Caribbean'
+        gts[727] = "Latin America & Caribbean"
+        gts[139] = 'New South Wales' # 'New South Wales' <- 'New South Waves'
+        gts[170] = "0.375 or 37.5%"
+        gts[329] = 'Kareena Kapoor' # 'Kareena Kapoor' <- 'Kareen Kapoor'
+        gts[410] = "Alaska" # 'Alaska' <- 'Alaksa'
+        gts[456] =  'L. iced Mocha' # 'L. iced Macha' <- 'L. iced Matcha'
+        gts[476] = "20 hypotheses" # '20 hypotheses' <- '20 hypoetheses'
+        gts[486] = 'The Mandalorian and Loki' # 'The Mandalorian and Loki' <- 'The Mandolarian and Loki'
+        gts[626] = "Minority Stake" # 'Minority Stake' <- 'Minotirty Stake'
+        gts[965] = "Single-task ZO (shared model)" # 'Single-task ZO (shared model)' <- 'Sing-task ZO (shared model)'
 
     def build_prompt(self, line: Union[int, pd.Series]) -> List[Dict[str, str]]:
         """
@@ -159,6 +175,7 @@ class ChartMuseum(ImageBaseDataset):
         benchmark = self.data
         questions = benchmark["question"].tolist()
         gts = benchmark["answer"].astype(str).tolist()
+        self._fix_gts(gts)
         categories = benchmark['category'].astype(str).tolist()
 
         data = file.load(eval_file)
